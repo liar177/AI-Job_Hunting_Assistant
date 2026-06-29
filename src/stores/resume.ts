@@ -20,7 +20,7 @@ export const useResumeStore = defineStore('resume', () => {
   }
 
   // 创建简历
-  function createResume(data: { title: string; content: string; originalContent: string }) {
+  function createResume(data: { title: string; content: string; originalContent: string; sourceType?: string }) {
     const resume = resumeDb.create(data)
     loadResumes()
     return resume

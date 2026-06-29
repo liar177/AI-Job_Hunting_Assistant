@@ -43,17 +43,18 @@ export const resumeDb = {
     return readData<Resume>(STORAGE_KEYS.RESUMES).find((r) => r.id === id)
   },
 
-  create(data: { title: string; content: string; originalContent: string }): Resume {
+  create(data: { title: string; content: string; originalContent: string; sourceType?: string }): Resume {
     const resumes = readData<Resume>(STORAGE_KEYS.RESUMES)
-    const resume: Resume = {
+    const resume = {
       id: generateId(),
       title: data.title,
       content: data.content,
       originalContent: data.originalContent,
+      sourceType: data.sourceType,
       version: 1,
       createdAt: now(),
       updatedAt: now(),
-    }
+    } as Resume & { sourceType?: string }
     resumes.push(resume)
     writeData(STORAGE_KEYS.RESUMES, resumes)
     return resume

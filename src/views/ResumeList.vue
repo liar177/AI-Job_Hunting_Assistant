@@ -18,6 +18,27 @@ const newContent = ref('')
 // 文件导入
 const fileInput = ref<HTMLInputElement | null>(null)
 
+function getFileSourceType(fileName: string): string {
+  const extension = fileName.split('.').pop()?.toLowerCase()
+  if (extension === 'md' || extension === 'markdown') return 'markdown'
+  if (extension === 'txt') return 'txt'
+  if (extension === 'docx') return 'docx'
+  if (extension === 'pdf') return 'pdf'
+  return 'manual'
+}
+
+function sourceTypeLabel(resume: Resume): string {
+  const sourceType = (resume as Resume & { sourceType?: string }).sourceType || 'manual'
+  const labels: Record<string, string> = {
+    manual: '手动',
+    markdown: 'MD',
+    txt: 'TXT',
+    docx: 'DOCX',
+    pdf: 'PDF',
+  }
+  return labels[sourceType] || sourceType.toUpperCase()
+}
+
 onMounted(() => {
   store.loadResumes()
 })
@@ -36,7 +57,7 @@ function createResume() {
   const title = newTitle.value.trim()
   if (!title) return
   const content = newContent.value
-  const resume = store.createResume({ title, content, originalContent: content })
+  const resume = store.createResume({ title, content, originalContent: content, sourceType: 'manual' })
   showModal.value = false
   router.push(`/resumes/${resume.id}`)
 }
@@ -61,8 +82,13 @@ async function handleFileChange(e: Event) {
   if (!file) return
   try {
     const content = await readFile(file)
-    const title = file.name.replace(/\.(md|txt)$/i, '')
-    const resume = store.createResume({ title, content, originalContent: content })
+    const title = file.name.replace(/\.(md|markdown|txt|docx|pdf)$/i, '')
+    const resume = store.createResume({
+      title,
+      content,
+      originalContent: content,
+      sourceType: getFileSourceType(file.name),
+    })
     router.push(`/resumes/${resume.id}`)
   } catch {
     window.alert('文件读取失败，请重试')
@@ -88,7 +114,7 @@ function preview(content: string): string {
         <input
           ref="fileInput"
           type="file"
-          accept=".md,.txt"
+          accept=".md,.markdown,.txt,.docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           class="hidden"
           @change="handleFileChange"
         />
@@ -152,7 +178,12 @@ function preview(content: string): string {
                 <FileText class="w-5 h-5 text-primary" />
               </div>
               <div class="min-w-0">
-                <h3 class="font-medium text-gray-800 truncate">{{ resume.title }}</h3>
+                <div class="flex items-center gap-2 min-w-0">
+                  <h3 class="font-medium text-gray-800 truncate">{{ resume.title }}</h3>
+                  <span class="shrink-0 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-gray-500">
+                    {{ sourceTypeLabel(resume) }}
+                  </span>
+                </div>
                 <p class="text-xs text-gray-400 mt-0.5">v{{ resume.version }} · {{ formatDate(resume.updatedAt) }}</p>
               </div>
             </div>
