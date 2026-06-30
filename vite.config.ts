@@ -3,6 +3,8 @@ import vue from '@vitejs/plugin-vue'
 import path from 'path'
 import Inspector from 'unplugin-vue-dev-locator/vite'
 import traeBadgePlugin from 'vite-plugin-trae-solo-badge'
+import AutoImport from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'element-plus/dist/auto-import-resolver.mjs'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -12,6 +14,9 @@ export default defineConfig({
   plugins: [
     vue(),
     Inspector(),
+    AutoImport({
+      resolvers: [ElementPlusResolver()],
+    }),
     traeBadgePlugin({
       variant: 'dark',
       position: 'bottom-right',

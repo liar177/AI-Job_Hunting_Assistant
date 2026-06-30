@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useResumeStore } from '@/stores/resume'
 import { renderMarkdown, downloadMarkdown, cleanLegacyDocStyleNoiseFromMarkdown } from '@/utils/markdown'
 import { formatDate } from '@/utils/constants'
+import { showSuccess, showError } from '@/utils/message'
 import { ArrowLeft, Save, FileDown, FileText, Pencil, Check, X, Eye } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -13,18 +14,8 @@ const store = useResumeStore()
 const titleEditing = ref(false)
 const titleInput = ref('')
 const content = ref('')
-const toastMessage = ref('')
-let toastTimer: ReturnType<typeof window.setTimeout> | undefined
 
 const renderedHtml = computed(() => renderMarkdown(content.value))
-
-function showToast(message: string) {
-  toastMessage.value = message
-  if (toastTimer) window.clearTimeout(toastTimer)
-  toastTimer = window.setTimeout(() => {
-    toastMessage.value = ''
-  }, 2200)
-}
 
 function escapeHtml(value: string): string {
   return value
@@ -77,20 +68,20 @@ function cancelEditTitle() {
 function saveResume() {
   if (!store.currentResume) return
   store.updateResume(store.currentResume.id, { content: content.value })
-  showToast('保存成功')
+  showSuccess('保存成功')
 }
 
 function exportMd() {
   if (!store.currentResume) return
   downloadMarkdown(content.value, `${store.currentResume.title}.md`)
-  showToast('Markdown 已开始下载')
+  showSuccess('Markdown 已开始下载')
 }
 
 function exportPdf() {
   if (!store.currentResume) return
   const printWindow = window.open('', '_blank')
   if (!printWindow) {
-    showToast('无法打开 PDF 导出窗口，请检查浏览器弹窗设置')
+    showError('无法打开 PDF 导出窗口，请检查浏览器弹窗设置')
     return
   }
 
@@ -140,7 +131,7 @@ function exportPdf() {
   printWindow.document.close()
   printWindow.focus()
   printWindow.print()
-  showToast('已打开 PDF 导出窗口，请选择另存为 PDF')
+  showSuccess('已打开 PDF 导出窗口，请选择另存为 PDF')
 }
 </script>
 
@@ -261,12 +252,5 @@ function exportPdf() {
         </button>
       </div>
     </footer>
-
-    <div
-      v-if="toastMessage"
-      class="fixed top-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white shadow-lg"
-    >
-      {{ toastMessage }}
-    </div>
   </div>
 </template>

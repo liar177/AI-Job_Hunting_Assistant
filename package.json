@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "clsx": "^2.1.1",
+    "element-plus": "^2.14.2",
     "highlight.js": "^11.9.0",
     "lucide-vue-next": "^0.511.0",
     "mammoth": "^1.12.0",
@@ -21,6 +22,7 @@
     "pdfjs-dist": "^6.1.200",
     "pinia": "^2.1.7",
     "tailwind-merge": "^3.3.0",
+    "unplugin-vue-components": "^32.1.0",
     "vue": "^3.4.15",
     "vue-router": "^4.2.5"
   },

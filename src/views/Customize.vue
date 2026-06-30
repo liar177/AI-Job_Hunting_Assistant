@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useResumeStore } from '@/stores/resume'
 import { useAIStore } from '@/stores/ai'
+import { showSuccess } from '@/utils/message'
 import GenerateResult from '@/components/Customize/GenerateResult.vue'
 import {
   FileText, Briefcase, Sparkles, Loader2,
@@ -112,6 +113,7 @@ function saveAsNewResume() {
     originalContent: cleanContent,
   })
   savedSuccess.value = true
+  showSuccess('已保存为新简历')
 }
 
 // 跳转到投递管理
@@ -276,18 +278,13 @@ function goToApplication() {
               <Sparkles v-else class="w-4 h-4" />
               {{ aiStore.generating ? '生成中...' : (generatedContent ? '重新生成' : '一键生成定向简历') }}
             </button>
-          </div>
-
-          <!-- 返回上一步按钮 -->
-          <div v-if="!aiStore.generating" class="flex items-center justify-between mt-6">
             <button
               @click="prevStep"
-              class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors"
+              class="w-full mt-3 inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors"
             >
               <ChevronLeft class="w-4 h-4" />
-              返回修改岗位信息
+              返回上一步
             </button>
-            <div></div>
           </div>
         </section>
         <div v-if="currentStep < 3 && !aiStore.generating" class="flex items-center justify-between mt-6">

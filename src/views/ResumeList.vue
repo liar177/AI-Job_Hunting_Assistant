@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useResumeStore } from '@/stores/resume'
 import { readFile } from '@/utils/markdown'
 import { formatDate } from '@/utils/constants'
+import { ElMessageBox, ElMessage } from 'element-plus'
 import { FileText, Plus, Eye, Trash2, Upload, X, Wand2 } from 'lucide-vue-next'
 import type { Resume } from '@/types'
 
@@ -73,9 +74,18 @@ function goToCustomize(resume: Resume) {
 }
 
 function handleDelete(resume: Resume) {
-  if (window.confirm(`确定删除简历"${resume.title}"吗？此操作不可恢复。`)) {
+  ElMessageBox.confirm(
+    `确定删除简历"${resume.title}"吗？此操作不可恢复。`,
+    '确认删除',
+    {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }
+  ).then(() => {
     store.deleteResume(resume.id)
-  }
+    ElMessage.success('删除成功')
+  }).catch(() => {})
 }
 
 function triggerImport() {
@@ -97,7 +107,7 @@ async function handleFileChange(e: Event) {
     })
     router.push(`/resumes/${resume.id}`)
   } catch {
-    window.alert('文件读取失败，请重试')
+    ElMessage.error('文件读取失败，请重试')
   } finally {
     if (fileInput.value) fileInput.value.value = ''
   }

@@ -5,6 +5,7 @@ import { useApplicationStore } from '@/stores/application'
 import { useResumeStore } from '@/stores/resume'
 import { STATUS_OPTIONS, getStatusOption, formatDate } from '@/utils/constants'
 import { renderMarkdown } from '@/utils/markdown'
+import { ElMessageBox, ElMessage } from 'element-plus'
 import type { ApplicationStatus, Resume } from '@/types'
 import {
   ArrowLeft, Briefcase, Calendar, Building, FileText,
@@ -73,10 +74,19 @@ function viewResume(id: string) {
 
 function handleDelete() {
   if (!app.value) return
-  if (window.confirm(`确定删除投递记录「${app.value.companyName} - ${app.value.jobTitle}」吗？此操作不可恢复。`)) {
-    store.deleteApplication(app.value.id)
+  ElMessageBox.confirm(
+    `确定删除投递记录「${app.value.companyName} - ${app.value.jobTitle}」吗？此操作不可恢复。`,
+    '确认删除',
+    {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }
+  ).then(() => {
+    store.deleteApplication(app.value!.id)
     router.push('/applications')
-  }
+    ElMessage.success('删除成功')
+  }).catch(() => {})
 }
 </script>
 

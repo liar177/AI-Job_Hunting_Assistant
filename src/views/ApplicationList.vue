@@ -4,9 +4,10 @@ import { useRouter, useRoute } from 'vue-router'
 import { useApplicationStore } from '@/stores/application'
 import { useResumeStore } from '@/stores/resume'
 import { STATUS_OPTIONS, getStatusOption, formatDate } from '@/utils/constants'
+import { ElMessageBox, ElMessage } from 'element-plus'
 import type { ApplicationStatus } from '@/types'
 import {
-  Plus, Search, Briefcase, X, Send, TrendingUp, Trophy, XCircle,
+  Plus, Search, Briefcase, X, Send, TrendingUp, Trophy, XCircle, Trash2,
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -84,6 +85,22 @@ function submitCreate() {
 
 function viewDetail(id: string) {
   router.push(`/applications/${id}`)
+}
+
+function handleDelete(id: string, companyName: string, jobTitle: string, event: Event) {
+  event.stopPropagation()
+  ElMessageBox.confirm(
+    `确定删除投递记录「${companyName} - ${jobTitle}」吗？此操作不可恢复。`,
+    '确认删除',
+    {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }
+  ).then(() => {
+    store.deleteApplication(id)
+    ElMessage.success('删除成功')
+  }).catch(() => {})
 }
 </script>
 
@@ -185,6 +202,12 @@ function viewDetail(id: string) {
               <div class="text-sm text-gray-500 truncate mt-0.5">{{ app.jobTitle }}</div>
             </div>
             <div class="text-xs text-gray-400 flex-shrink-0">{{ formatDate(app.appliedAt) }}</div>
+            <button
+              @click="handleDelete(app.id, app.companyName, app.jobTitle, $event)"
+              class="p-2 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors flex-shrink-0"
+            >
+              <Trash2 class="w-4 h-4" />
+            </button>
           </li>
         </ul>
       </section>

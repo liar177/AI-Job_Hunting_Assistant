@@ -69,15 +69,6 @@ function exportTxt() {
 
     <!-- 生成成功 -->
     <div v-else-if="content">
-      <!-- 保存成功提示 -->
-      <div
-        v-if="savedSuccess"
-        class="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2"
-      >
-        <CheckCircle class="w-4 h-4 text-green-600" />
-        <span class="text-sm text-green-700">已保存为新简历</span>
-      </div>
-
       <!-- 结果操作按钮 -->
       <div class="flex flex-wrap items-center gap-2">
         <button
