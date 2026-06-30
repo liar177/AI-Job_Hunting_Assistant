@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useResumeStore } from '@/stores/resume'
 import { useAIStore } from '@/stores/ai'
 import GenerateResult from '@/components/Customize/GenerateResult.vue'
@@ -11,6 +11,7 @@ import {
 } from 'lucide-vue-next'
 
 const router = useRouter()
+const route = useRoute()
 const resumeStore = useResumeStore()
 const aiStore = useAIStore()
 
@@ -29,6 +30,20 @@ const selectedResume = computed(() =>
 )
 const hasApiKey = computed(() => !!aiStore.config.apiKey)
 
+// 获取简历来源类型标签
+function getSourceTypeLabel(resume: Resume): string {
+  const sourceType = (resume as Resume & { sourceType?: string }).sourceType || 'manual'
+  const labels: Record<string, string> = {
+    manual: '手动创建',
+    pdf: 'PDF',
+    docx: 'DOCX',
+    doc: 'DOC',
+    md: 'MD',
+    txt: 'TXT',
+  }
+  return labels[sourceType] || sourceType.toUpperCase()
+}
+
 const steps = [
   { num: 1, label: '选择简历' },
   { num: 2, label: '岗位信息' },
@@ -37,6 +52,12 @@ const steps = [
 
 onMounted(() => {
   resumeStore.loadResumes()
+  // 检查URL参数，如果有resumeId则直接跳到第二步
+  const resumeId = route.query.resumeId as string
+  if (resumeId) {
+    selectedResumeId.value = resumeId
+    currentStep.value = 2
+  }
 })
 
 function goToSettings() {
@@ -77,14 +98,41 @@ async function handleGenerate() {
 
 function saveAsNewResume() {
   if (!generatedContent.value) return
+  // 清理markdown代码块标记
+  let cleanContent = generatedContent.value
+  // 移除开头和结尾的markdown代码块标记
+  cleanContent = cleanContent.replace(/^```markdown\s*/i, '')
+  cleanContent = cleanContent.replace(/```\s*$/i, '')
+  cleanContent = cleanContent.trim()
+  
   const title = `${companyName.value}-${jobTitle.value}-定制简历`
   resumeStore.createResume({
     title,
-    content: generatedContent.value,
-    originalContent: generatedContent.value,
+    content: cleanContent,
+    originalContent: cleanContent,
   })
   savedSuccess.value = true
-  setTimeout(() => { savedSuccess.value = false }, 3000)
+}
+
+// 跳转到投递管理
+function goToApplication() {
+  // 先保存为新简历
+  if (generatedContent.value) {
+    // 清理markdown代码块标记
+    let cleanContent = generatedContent.value
+    cleanContent = cleanContent.replace(/^```markdown\s*/i, '')
+    cleanContent = cleanContent.replace(/```\s*$/i, '')
+    cleanContent = cleanContent.trim()
+    
+    const title = `${companyName.value}-${jobTitle.value}-定制简历`
+    const newResume = resumeStore.createResume({
+      title,
+      content: cleanContent,
+      originalContent: cleanContent,
+    })
+    // 跳转到投递管理并预填信息
+    router.push(`/applications?companyName=${encodeURIComponent(companyName.value)}&jobTitle=${encodeURIComponent(jobTitle.value)}&resumeId=${newResume.id}`)
+  }
 }
 </script>
 
@@ -156,7 +204,9 @@ function saveAsNewResume() {
             class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
           >
             <option value="" disabled>请选择简历</option>
-            <option v-for="r in resumeStore.resumes" :key="r.id" :value="r.id">{{ r.title }}</option>
+            <option v-for="r in resumeStore.resumes" :key="r.id" :value="r.id">
+              {{ r.title }}（{{ getSourceTypeLabel(r) }}）
+            </option>
           </select>
           <p v-if="resumeStore.resumes.length === 0" class="text-xs text-amber-600 mt-2">
             还没有简历，请先去简历管理创建
@@ -196,38 +246,51 @@ function saveAsNewResume() {
         </section>
 
         <!-- 第三步：生成简历 -->
-        <section v-else-if="currentStep === 3" class="bg-white rounded-xl border border-gray-100 p-6">
-          <div class="flex items-center gap-2 text-sm font-medium text-gray-700 mb-4">
-            <Sparkles class="w-4 h-4 text-primary" />
-            确认信息并生成
+        <section v-else-if="currentStep === 3" class="space-y-6">
+          <!-- 确认信息卡片 -->
+          <div class="bg-white rounded-xl border border-gray-100 p-6">
+            <div class="flex items-center gap-2 text-sm font-medium text-gray-700 mb-4">
+              <Sparkles class="w-4 h-4 text-primary" />
+              确认信息并生成
+            </div>
+            <div class="space-y-3 text-sm">
+              <div class="flex justify-between">
+                <span class="text-gray-500">所选简历</span>
+                <span class="text-gray-800 font-medium">{{ selectedResume?.title }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-500">目标公司</span>
+                <span class="text-gray-800 font-medium">{{ companyName }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-500">目标职位</span>
+                <span class="text-gray-800 font-medium">{{ jobTitle }}</span>
+              </div>
+            </div>
+            <button
+              @click="handleGenerate"
+              :disabled="aiStore.generating || !hasApiKey"
+              class="w-full mt-6 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Loader2 v-if="aiStore.generating" class="w-4 h-4 animate-spin" />
+              <Sparkles v-else class="w-4 h-4" />
+              {{ aiStore.generating ? '生成中...' : (generatedContent ? '重新生成' : '一键生成定向简历') }}
+            </button>
           </div>
-          <div class="space-y-3 text-sm">
-            <div class="flex justify-between">
-              <span class="text-gray-500">所选简历</span>
-              <span class="text-gray-800 font-medium">{{ selectedResume?.title }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-gray-500">目标公司</span>
-              <span class="text-gray-800 font-medium">{{ companyName }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-gray-500">目标职位</span>
-              <span class="text-gray-800 font-medium">{{ jobTitle }}</span>
-            </div>
-          </div>
-          <button
-            @click="handleGenerate"
-            :disabled="aiStore.generating || !hasApiKey"
-            class="w-full mt-6 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Loader2 v-if="aiStore.generating" class="w-4 h-4 animate-spin" />
-            <Sparkles v-else class="w-4 h-4" />
-            {{ aiStore.generating ? '生成中...' : (generatedContent ? '重新生成' : '一键生成定向简历') }}
-          </button>
-        </section>
 
-        <!-- 导航按钮 -->
-        <div v-if="!aiStore.generating" class="flex items-center justify-between mt-6">
+          <!-- 返回上一步按钮 -->
+          <div v-if="!aiStore.generating" class="flex items-center justify-between mt-6">
+            <button
+              @click="prevStep"
+              class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors"
+            >
+              <ChevronLeft class="w-4 h-4" />
+              返回修改岗位信息
+            </button>
+            <div></div>
+          </div>
+        </section>
+        <div v-if="currentStep < 3 && !aiStore.generating" class="flex items-center justify-between mt-6">
           <button
             v-if="currentStep > 1"
             @click="prevStep"
@@ -238,7 +301,6 @@ function saveAsNewResume() {
           </button>
           <div v-else></div>
           <button
-            v-if="currentStep < 3"
             @click="nextStep"
             :disabled="!canNext()"
             class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -246,23 +308,23 @@ function saveAsNewResume() {
             下一步
             <ChevronRight class="w-4 h-4" />
           </button>
-          <div v-else></div>
         </div>
-
-        <!-- 生成结果区域 -->
-        <GenerateResult
-          v-if="currentStep === 3"
-          :generating="aiStore.generating"
-          :error-msg="errorMsg"
-          :content="generatedContent"
-          :saved-success="savedSuccess"
-          :company-name="companyName"
-          :job-title="jobTitle"
-          @regenerate="handleGenerate"
-          @save="saveAsNewResume"
-          @update:content="generatedContent = $event"
-        />
       </div>
+
+      <!-- 生成结果区域 - 独立于 max-w-5xl 容器之外，占满可用宽度 -->
+      <GenerateResult
+        v-if="currentStep === 3 && (aiStore.generating || generatedContent)"
+        :generating="aiStore.generating"
+        :error-msg="errorMsg"
+        :content="generatedContent"
+        :saved-success="savedSuccess"
+        :company-name="companyName"
+        :job-title="jobTitle"
+        @regenerate="handleGenerate"
+        @save="saveAsNewResume"
+        @update:content="generatedContent = $event"
+        @go-to-application="goToApplication"
+      />
     </main>
   </div>
 </template>

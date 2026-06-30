@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useResumeStore } from '@/stores/resume'
-import { renderMarkdown, downloadMarkdown } from '@/utils/markdown'
+import { renderMarkdown, downloadMarkdown, cleanLegacyDocStyleNoiseFromMarkdown } from '@/utils/markdown'
 import { formatDate } from '@/utils/constants'
 import { ArrowLeft, Save, FileDown, FileText, Pencil, Check, X, Eye } from 'lucide-vue-next'
 
@@ -41,7 +41,7 @@ function loadResumeData(id: string) {
     return
   }
   titleInput.value = resume.title
-  content.value = resume.content
+  content.value = cleanLegacyDocStyleNoiseFromMarkdown(resume.content)
 }
 
 onMounted(() => loadResumeData(route.params.id as string))

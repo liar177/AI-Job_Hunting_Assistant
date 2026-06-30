@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { renderMarkdown } from '@/utils/markdown'
 import { downloadMarkdown, downloadText } from '@/utils/markdown'
 import {
-  Loader2, Save, FileDown, AlertCircle, CheckCircle, FileText, Eye,
+  Loader2, Save, FileDown, AlertCircle, CheckCircle, FileText, Eye, Send,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -19,6 +19,7 @@ const emit = defineEmits<{
   regenerate: []
   save: [content: string]
   'update:content': [value: string]
+  'go-to-application': []
 }>()
 
 const renderedPreview = computed(() => renderMarkdown(props.content))
@@ -40,7 +41,7 @@ function exportTxt() {
 </script>
 
 <template>
-  <div class="mt-6 space-y-4">
+  <div class="mt-6 space-y-4 w-full">
     <!-- 生成中 -->
     <div
       v-if="generating"
@@ -87,6 +88,19 @@ function exportTxt() {
           保存为新简历
         </button>
         <button
+          @click="emit('go-to-application')"
+          :disabled="!savedSuccess"
+          :class="[
+            'inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+            savedSuccess
+              ? 'bg-primary text-white hover:bg-primary-700'
+              : 'bg-gray-100 text-gray-400 cursor-not-allowed',
+          ]"
+        >
+          <Send class="w-4 h-4" />
+          添加到投递管理
+        </button>
+        <button
           @click="exportMd"
           class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors"
         >
@@ -103,7 +117,7 @@ function exportTxt() {
       </div>
 
       <!-- 左右分栏：编辑 + 预览 -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-[500px]">
         <section class="bg-white rounded-xl border border-gray-100 overflow-hidden flex flex-col">
           <div class="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
             <div class="flex items-center gap-2 text-sm font-medium text-gray-600">
@@ -116,7 +130,7 @@ function exportTxt() {
             :value="content"
             @input="emit('update:content', ($event.target as HTMLTextAreaElement).value)"
             rows="20"
-            class="w-full p-4 text-sm font-mono text-gray-800 resize-y focus:outline-none"
+            class="w-full h-full p-4 text-sm font-mono text-gray-800 resize-y focus:outline-none min-h-[400px]"
           ></textarea>
         </section>
         <section class="bg-white rounded-xl border border-gray-100 overflow-hidden flex flex-col">
@@ -127,7 +141,7 @@ function exportTxt() {
             </div>
           </div>
           <div
-            class="flex-1 overflow-auto p-4 prose prose-sm max-w-none"
+            class="flex-1 overflow-auto p-6 prose-resume max-w-none"
             v-html="renderedPreview"
           ></div>
         </section>

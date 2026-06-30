@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useResumeStore } from '@/stores/resume'
 import { readFile } from '@/utils/markdown'
 import { formatDate } from '@/utils/constants'
-import { FileText, Plus, Eye, Trash2, Upload, X } from 'lucide-vue-next'
+import { FileText, Plus, Eye, Trash2, Upload, X, Wand2 } from 'lucide-vue-next'
 import type { Resume } from '@/types'
 
 const router = useRouter()
@@ -22,6 +22,7 @@ function getFileSourceType(fileName: string): string {
   const extension = fileName.split('.').pop()?.toLowerCase()
   if (extension === 'md' || extension === 'markdown') return 'markdown'
   if (extension === 'txt') return 'txt'
+  if (extension === 'doc') return 'doc'
   if (extension === 'docx') return 'docx'
   if (extension === 'pdf') return 'pdf'
   return 'manual'
@@ -33,6 +34,7 @@ function sourceTypeLabel(resume: Resume): string {
     manual: '手动',
     markdown: 'MD',
     txt: 'TXT',
+    doc: 'DOC',
     docx: 'DOCX',
     pdf: 'PDF',
   }
@@ -66,6 +68,10 @@ function viewDetail(resume: Resume) {
   router.push(`/resumes/${resume.id}`)
 }
 
+function goToCustomize(resume: Resume) {
+  router.push(`/customize?resumeId=${resume.id}`)
+}
+
 function handleDelete(resume: Resume) {
   if (window.confirm(`确定删除简历"${resume.title}"吗？此操作不可恢复。`)) {
     store.deleteResume(resume.id)
@@ -82,7 +88,7 @@ async function handleFileChange(e: Event) {
   if (!file) return
   try {
     const content = await readFile(file)
-    const title = file.name.replace(/\.(md|markdown|txt|docx|pdf)$/i, '')
+    const title = file.name.replace(/\.(md|markdown|txt|doc|docx|pdf)$/i, '')
     const resume = store.createResume({
       title,
       content,
@@ -114,7 +120,7 @@ function preview(content: string): string {
         <input
           ref="fileInput"
           type="file"
-          accept=".md,.markdown,.txt,.docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          accept=".md,.markdown,.txt,.doc,.docx,.pdf,application/msword,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           class="hidden"
           @change="handleFileChange"
         />
@@ -195,8 +201,15 @@ function preview(content: string): string {
 
           <div class="flex items-center gap-2 pt-3 border-t border-gray-50">
             <button
+              @click="goToCustomize(resume)"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-white text-xs font-medium hover:bg-accent-dark transition-colors"
+            >
+              <Wand2 class="w-3.5 h-3.5" />
+              定制简历
+            </button>
+            <button
               @click="viewDetail(resume)"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-white text-xs font-medium hover:bg-primary-700 transition-colors"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-200 text-gray-700 text-xs font-medium hover:bg-gray-50 transition-colors"
             >
               <Eye class="w-3.5 h-3.5" />
               查看详情

@@ -1,6 +1,6 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useApplicationStore } from '@/stores/application'
 import { useResumeStore } from '@/stores/resume'
 import { STATUS_OPTIONS, getStatusOption, formatDate } from '@/utils/constants'
@@ -10,6 +10,7 @@ import {
 } from 'lucide-vue-next'
 
 const router = useRouter()
+const route = useRoute()
 const store = useApplicationStore()
 const resumeStore = useResumeStore()
 
@@ -38,6 +39,21 @@ const isFiltering = computed(() =>
 onMounted(() => {
   store.loadApplications()
   resumeStore.loadResumes()
+  // 检查URL参数，如果有预填信息则打开模态框
+  const companyName = route.query.companyName as string
+  const jobTitle = route.query.jobTitle as string
+  const resumeId = route.query.resumeId as string
+  if (companyName || jobTitle || resumeId) {
+    form.value = {
+      companyName: companyName || '',
+      jobTitle: jobTitle || '',
+      jobDescription: '',
+      companyInfo: '',
+      resumeId: resumeId || '',
+      notes: '',
+    }
+    showModal.value = true
+  }
 })
 
 function openModal() {
