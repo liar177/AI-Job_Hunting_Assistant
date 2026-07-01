@@ -1,15 +1,31 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useResumeStore } from '@/stores/resume'
 import { useAIStore } from '@/stores/ai'
-import type { Resume } from '@/types'
+import type { OptimizationBasis, Resume } from '@/types'
 import { showSuccess } from '@/utils/message'
 import { downloadMarkdown, downloadText, renderMarkdown } from '@/utils/markdown'
+import { ArrowDown,ArrowUp } from '@element-plus/icons-vue'
 import {
-  FileText, Briefcase, Sparkles, Loader2,
-  AlertCircle, Settings as SettingsIcon,
-  Eye, Save, FileDown, Send, X,
+  AlertCircle,
+  AlertTriangle,
+  Briefcase,
+  CheckCircle2,
+  Eye,
+  FileDown,
+  FileText,
+  ListTodo,
+  Loader2,
+  RefreshCw,
+  Save,
+  Send,
+  Settings as SettingsIcon,
+  ShieldAlert,
+  Sparkles,
+  Tags,
+  Wand2,
+  X,
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -22,25 +38,102 @@ const companyName = ref('')
 const jobTitle = ref('')
 const jobDescription = ref('')
 const companyInfo = ref('')
+const optimizationBasis = ref<OptimizationBasis | null>(null)
+const analysisError = ref('')
+const basisStale = ref(false)
 const generatedContent = ref('')
 const errorMsg = ref('')
 const savedSuccess = ref(false)
 const savedResumeId = ref('')
 const activeTab = ref<'preview' | 'source'>('preview')
 const showApiKeyWarning = ref(true)
+const expandedBasisSections = ref<Set<string>>(new Set())
 
 const selectedResume = computed(() =>
   resumeStore.resumes.find((r) => r.id === selectedResumeId.value)
 )
 const hasApiKey = computed(() => !!aiStore.config.apiKey)
-const canGenerate = computed(() =>
+const canWork = computed(() =>
   !!selectedResume.value &&
   !!companyName.value.trim() &&
   !!jobTitle.value.trim() &&
   !!jobDescription.value.trim() &&
   hasApiKey.value
 )
+const isBusy = computed(() => aiStore.analyzing || aiStore.generating)
 const renderedPreview = computed(() => renderMarkdown(generatedContent.value))
+const fitScoreWidth = computed(() => `${optimizationBasis.value?.fitScore || 0}%`)
+const generationLoadingText = computed(() =>
+  optimizationBasis.value
+    ? 'AI 正在根据优化依据生成简历...'
+    : 'AI 正在生成定制简历...'
+)
+
+const basisSections = computed(() => {
+  const basis = optimizationBasis.value
+  return [
+    {
+      title: '已匹配优势',
+      icon: CheckCircle2,
+      items: basis?.matchedAdvantages || [],
+      classes: 'border-emerald-100 bg-emerald-50 text-emerald-800',
+      iconClasses: 'bg-emerald-100 text-emerald-700',
+    },
+    {
+      title: '缺少或较弱能力',
+      icon: AlertTriangle,
+      items: basis?.weakPoints || [],
+      classes: 'border-amber-100 bg-amber-50 text-amber-800',
+      iconClasses: 'bg-amber-100 text-amber-700',
+    },
+    {
+      title: '可迁移经历',
+      icon: RefreshCw,
+      items: basis?.transferableExperience || [],
+      classes: 'border-sky-100 bg-sky-50 text-sky-800',
+      iconClasses: 'bg-sky-100 text-sky-700',
+    },
+    {
+      title: '关键词策略',
+      icon: Tags,
+      items: basis?.keywordStrategy || [],
+      classes: 'border-indigo-100 bg-indigo-50 text-indigo-800',
+      iconClasses: 'bg-indigo-100 text-indigo-700',
+    },
+    {
+      title: '修改策略',
+      icon: ListTodo,
+      items: basis?.rewriteStrategy || [],
+      classes: 'border-cyan-100 bg-cyan-50 text-cyan-800',
+      iconClasses: 'bg-cyan-100 text-cyan-700',
+    },
+    {
+      title: '风险提示',
+      icon: ShieldAlert,
+      items: basis?.riskNotes || [],
+      classes: 'border-rose-100 bg-rose-50 text-rose-800',
+      iconClasses: 'bg-rose-100 text-rose-700',
+    },
+  ]
+})
+
+function isBasisSectionExpanded(title: string): boolean {
+  return expandedBasisSections.value.has(title)
+}
+
+function toggleBasisSection(title: string) {
+  const next = new Set(expandedBasisSections.value)
+  if (next.has(title)) {
+    next.delete(title)
+  } else {
+    next.add(title)
+  }
+  expandedBasisSections.value = next
+}
+
+function visibleBasisItems(section: { title: string; items: string[] }): string[] {
+  return isBasisSectionExpanded(section.title) ? section.items : section.items.slice(0, 2)
+}
 
 // 获取简历来源类型标签
 function getSourceTypeLabel(resume: Resume): string {
@@ -64,6 +157,27 @@ onMounted(() => {
   }
 })
 
+watch(selectedResumeId, () => {
+  optimizationBasis.value = null
+  analysisError.value = ''
+  basisStale.value = false
+  expandedBasisSections.value = new Set()
+  generatedContent.value = ''
+  savedSuccess.value = false
+  savedResumeId.value = ''
+})
+
+watch([companyName, jobTitle, jobDescription, companyInfo], () => {
+  if (optimizationBasis.value) {
+    basisStale.value = true
+  }
+  if (generatedContent.value) {
+    generatedContent.value = ''
+    savedSuccess.value = false
+    savedResumeId.value = ''
+  }
+})
+
 function goToSettings() {
   router.push('/settings')
 }
@@ -79,8 +193,36 @@ function cleanGeneratedContent(content: string): string {
     .trim()
 }
 
-async function handleGenerate() {
-  if (!canGenerate.value || !selectedResume.value) return
+async function handleAnalyze() {
+  if (!canWork.value || !selectedResume.value) return
+
+  analysisError.value = ''
+  errorMsg.value = ''
+  generatedContent.value = ''
+  savedSuccess.value = false
+  savedResumeId.value = ''
+
+  const result = await aiStore.analyze({
+    resumeContent: selectedResume.value.content,
+    companyName: companyName.value,
+    jobTitle: jobTitle.value,
+    jobDescription: jobDescription.value,
+    companyInfo: companyInfo.value,
+  })
+
+  if (result.success && result.data) {
+    optimizationBasis.value = result.data
+    basisStale.value = false
+    expandedBasisSections.value = new Set()
+  } else {
+    optimizationBasis.value = null
+    expandedBasisSections.value = new Set()
+    analysisError.value = result.error || '分析失败'
+  }
+}
+
+async function handleGenerate(useBasis = true) {
+  if (!canWork.value || !selectedResume.value) return
   errorMsg.value = ''
   generatedContent.value = ''
   savedSuccess.value = false
@@ -89,8 +231,11 @@ async function handleGenerate() {
 
   const result = await aiStore.generate({
     resumeContent: selectedResume.value.content,
+    companyName: companyName.value,
+    jobTitle: jobTitle.value,
     jobDescription: jobDescription.value,
     companyInfo: companyInfo.value,
+    optimizationBasis: useBasis ? optimizationBasis.value || undefined : undefined,
   })
 
   if (result.success) {
@@ -143,12 +288,13 @@ function exportTxt() {
   <div class="h-full min-h-0 flex flex-col bg-gray-50">
     <header class="px-5 py-5 bg-white border-b border-gray-100 lg:px-8">
       <h1 class="text-2xl font-semibold text-primary">简历定制</h1>
-      <p class="text-sm text-gray-500 mt-1">选择简历、填写岗位信息，并在右侧实时查看 AI 定制结果</p>
+      <p class="text-sm text-gray-500 mt-1">选择简历、填写岗位信息，先分析优化依据，也可以直接生成定向简历</p>
     </header>
 
     <main class="flex-1 min-h-0 overflow-auto p-4 lg:overflow-hidden lg:px-8 lg:py-6">
       <div class="mx-auto flex min-h-full w-full max-w-[1440px] flex-col gap-4 lg:h-full lg:min-h-0 lg:flex-row">
-        <aside class="space-y-4 lg:h-full lg:w-[42%] lg:max-w-[560px] lg:min-w-[420px] lg:overflow-auto lg:pr-1">
+        <aside class="space-y-4 lg:flex lg:h-full lg:w-[42%] lg:max-w-[560px] lg:min-w-[420px] lg:flex-col lg:overflow-hidden lg:pr-1">
+          <div class="space-y-4 lg:min-h-0 lg:flex-1 lg:overflow-auto lg:pr-1">
           <div
             v-if="!hasApiKey && showApiKeyWarning"
             class="rounded-lg border border-amber-200 bg-amber-50 p-4"
@@ -255,17 +401,6 @@ function exportTxt() {
                 class="w-full resize-y rounded-lg border border-gray-200 px-3 py-2 text-sm leading-6 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               ></textarea>
             </div>
-
-            <button
-              type="button"
-              :disabled="aiStore.generating || !canGenerate"
-              class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
-              @click="handleGenerate"
-            >
-              <Loader2 v-if="aiStore.generating" class="h-4 w-4 animate-spin" />
-              <Sparkles v-else class="h-4 w-4" />
-              {{ aiStore.generating ? '生成中...' : (generatedContent ? '重新生成' : '一键生成定向简历') }}
-            </button>
           </section>
 
           <section v-if="generatedContent" class="space-y-3 rounded-lg border border-gray-100 bg-white p-5">
@@ -311,6 +446,137 @@ function exportTxt() {
               </button>
             </div>
           </section>
+          </div>
+
+          <section class="space-y-4 rounded-lg border border-gray-100 bg-white p-5 lg:flex lg:min-h-[260px] lg:max-h-[48%] lg:shrink-0 lg:flex-col">
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-2 text-sm font-medium text-gray-800">
+                <Wand2 class="h-4 w-4 text-primary" />
+                简历优化依据
+              </div>
+              <div v-if="optimizationBasis" class="shrink-0 text-xs font-medium text-emerald-700">
+                匹配度 {{ optimizationBasis.fitScore }}%
+              </div>
+            </div>
+
+            <div class="min-h-0 space-y-4 lg:flex-1 lg:overflow-auto lg:pr-1">
+            <div v-if="optimizationBasis" class="space-y-4">
+              <div>
+                <div class="h-2 overflow-hidden rounded-full bg-gray-100">
+                  <div
+                    class="h-full rounded-full bg-accent transition-all"
+                    :style="{ width: fitScoreWidth }"
+                  ></div>
+                </div>
+                <p class="mt-3 text-sm leading-6 text-gray-700">{{ optimizationBasis.fitSummary }}</p>
+                <p v-if="basisStale" class="mt-2 text-xs leading-5 text-amber-600">
+                  左侧信息已调整，当前依据可能已过期，可重新分析后再生成。
+                </p>
+              </div>
+
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div
+                  v-for="section in basisSections"
+                  :key="section.title"
+                  :class="['min-h-[116px] rounded-lg border p-3', section.classes]"
+                >
+                  <div class="mb-2 flex items-center gap-2">
+                    <span :class="['inline-flex h-7 w-7 items-center justify-center rounded-md', section.iconClasses]">
+                      <component :is="section.icon" class="h-4 w-4" />
+                    </span>
+                    <span class="text-sm font-semibold">{{ section.title }}</span>
+                  </div>
+                  <ul v-if="section.items.length" class="space-y-1.5 text-xs leading-5">
+                    <li
+                      v-for="item in section.items.slice(0, 2)"
+                      :key="item"
+                      class="break-words"
+                    >
+                      {{ item }}
+                    </li>
+                      <li v-if="section.items.length > 2" class="opacity-70 flex items-center justify-start">
+                      <span class="inline-flex items-center justify-start rounded-lg" >
+                        另有 {{ section.items.length - 2 }} 条建议
+                      </span>
+                     <el-button  link type="" text="plain" style="color: inherit;" @click="toggleBasisSection(section.title)" >
+                        <template #icon>
+                          <el-icon>
+                            <component :is="isBasisSectionExpanded(section.title) ? ArrowUp : ArrowDown"  />
+                          </el-icon>
+                        </template>
+                     </el-button>
+                    </li>
+                    <li
+                      v-for="item in visibleBasisItems(section).slice(2)"
+                      :key="item"
+                      class="break-words"
+                      v-show="isBasisSectionExpanded(section.title)"
+                    >
+                      {{ item }}
+                    </li>
+                  </ul>
+                  <p v-else class="text-xs leading-5 opacity-70">暂无明显内容</p>
+                </div>
+              </div>
+            </div>
+
+            <div
+              v-else-if="aiStore.analyzing"
+              class="rounded-lg border border-teal-100 bg-teal-50 px-4 py-5 text-center"
+            >
+              <Loader2 class="mx-auto mb-3 h-8 w-8 animate-spin text-accent" />
+              <p class="text-sm font-medium text-teal-900">正在识别优势、差距和修改策略...</p>
+              <p class="mt-1 text-xs leading-5 text-teal-700">分析完成后会在这里展示结构化优化依据。</p>
+            </div>
+
+            <div
+              v-else-if="analysisError"
+              class="rounded-lg border border-amber-200 bg-amber-50 p-4"
+            >
+              <div class="mb-2 flex items-center gap-2 text-amber-800">
+                <AlertTriangle class="h-4 w-4" />
+                <span class="text-sm font-medium">优化依据分析失败</span>
+              </div>
+              <p class="text-xs leading-5 text-amber-700">{{ analysisError }}</p>
+              <p class="mt-2 text-xs leading-5 text-amber-700">可以重新分析，也可以跳过分析直接生成简历。</p>
+            </div>
+
+            <div v-else class="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-4">
+              <p class="text-sm font-medium text-gray-700">先让 AI 给出一份可解释的优化依据</p>
+              <p class="mt-1 text-xs leading-5 text-gray-500">
+                会识别已匹配优势、较弱能力、可迁移经历、关键词策略、修改策略和风险提示。
+              </p>
+            </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:shrink-0">
+              <button
+                type="button"
+                :disabled="isBusy || !canWork"
+                class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                @click="handleAnalyze"
+              >
+                <Loader2 v-if="aiStore.analyzing" class="h-4 w-4 animate-spin" />
+                <RefreshCw v-else-if="optimizationBasis || analysisError" class="h-4 w-4" />
+                <Sparkles v-else class="h-4 w-4" />
+                {{ aiStore.analyzing ? '分析中...' : (optimizationBasis || analysisError ? '重新分析' : '分析优化依据') }}
+              </button>
+
+              <button
+                type="button"
+                :disabled="isBusy || !canWork"
+                class="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
+                @click="handleGenerate(!!optimizationBasis)"
+              >
+                <Loader2 v-if="aiStore.generating" class="h-4 w-4 animate-spin" />
+                <Sparkles v-else class="h-4 w-4" />
+                <span v-if="aiStore.generating">生成中...</span>
+                <span v-else-if="optimizationBasis">基于依据生成简历</span>
+                <span v-else-if="analysisError">跳过分析直接生成</span>
+                <span v-else>{{ generatedContent ? '重新生成简历' : '直接生成简历' }}</span>
+              </button>
+            </div>
+          </section>
         </aside>
 
         <section class="flex min-h-[560px] flex-1 flex-col overflow-hidden rounded-lg border border-gray-100 bg-white lg:h-full lg:min-h-0">
@@ -345,7 +611,7 @@ function exportTxt() {
           <div class="min-h-0 flex-1 overflow-auto">
             <div v-if="aiStore.generating" class="flex min-h-full flex-col items-center justify-center px-6 py-16 text-center">
               <Loader2 class="mb-4 h-12 w-12 animate-spin text-accent" />
-              <p class="text-sm font-medium text-gray-700">AI 正在为你定制简历...</p>
+              <p class="text-sm font-medium text-gray-700">{{ generationLoadingText }}</p>
               <p class="mt-1 text-xs text-gray-400">这可能需要几秒钟，请耐心等待</p>
             </div>
 
@@ -358,9 +624,9 @@ function exportTxt() {
                 <p class="whitespace-pre-wrap break-words text-sm leading-6 text-red-600">{{ errorMsg }}</p>
                 <button
                   type="button"
-                  :disabled="!canGenerate"
+                  :disabled="!canWork"
                   class="mt-4 inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  @click="handleGenerate"
+                  @click="handleGenerate(!!optimizationBasis)"
                 >
                   重试
                 </button>
@@ -386,8 +652,8 @@ function exportTxt() {
               <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-50">
                 <FileText class="h-8 w-8 text-primary" />
               </div>
-              <p class="text-base font-medium text-gray-800">填写左侧信息并点击生成</p>
-              <p class="mt-2 max-w-sm text-sm leading-6 text-gray-500">生成完成后，可在这里预览定制简历，或切换到 Markdown 源码进行微调。</p>
+              <p class="text-base font-medium text-gray-800">填写左侧信息后生成定制简历</p>
+              <p class="mt-2 max-w-sm text-sm leading-6 text-gray-500">可以先分析优化依据，也可以直接生成。生成完成后，可在这里预览定制简历或微调 Markdown 源码。</p>
             </div>
           </div>
         </section>

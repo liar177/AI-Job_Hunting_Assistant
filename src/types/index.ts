@@ -61,11 +61,38 @@ export interface AIConfig {
   baseUrl: string
 }
 
-// AI生成请求类型
-export interface GenerateRequest {
+// AI分析请求类型
+export interface AnalyzeRequest {
   resumeContent: string
+  companyName: string
+  jobTitle: string
   jobDescription: string
   companyInfo: string
+}
+
+// 简历优化依据类型
+export interface OptimizationBasis {
+  fitSummary: string
+  fitScore: number
+  matchedAdvantages: string[]
+  weakPoints: string[]
+  transferableExperience: string[]
+  keywordStrategy: string[]
+  rewriteStrategy: string[]
+  riskNotes: string[]
+}
+
+// AI分析响应类型
+export interface AnalyzeResponse {
+  success: boolean
+  data?: OptimizationBasis
+  rawContent?: string
+  error?: string
+}
+
+// AI生成请求类型
+export interface GenerateRequest extends AnalyzeRequest {
+  optimizationBasis?: OptimizationBasis
 }
 
 // AI生成响应类型
