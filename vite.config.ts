@@ -4,7 +4,7 @@ import path from 'path'
 import Inspector from 'unplugin-vue-dev-locator/vite'
 import traeBadgePlugin from 'vite-plugin-trae-solo-badge'
 import AutoImport from 'unplugin-vue-components/vite'
-import { ElementPlusResolver } from 'element-plus/dist/auto-import-resolver.mjs'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
 // https://vite.dev/config/
 export default defineConfig({
