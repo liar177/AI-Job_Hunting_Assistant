@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRouter, useRoute } from 'vue-router'
 import { useResumeStore } from '@/stores/resume'
 import { useAIStore } from '@/stores/ai'
-import type { OptimizationBasis, Resume } from '@/types'
+import type { Resume } from '@/types'
 import { showSuccess } from '@/utils/message'
 import { downloadMarkdown, downloadText, renderMarkdown } from '@/utils/markdown'
 import { ArrowDown,ArrowUp } from '@element-plus/icons-vue'
@@ -18,6 +19,7 @@ import {
   ListTodo,
   Loader2,
   RefreshCw,
+  RotateCcw,
   Save,
   Send,
   Settings as SettingsIcon,
@@ -33,21 +35,23 @@ const route = useRoute()
 const resumeStore = useResumeStore()
 const aiStore = useAIStore()
 
-const selectedResumeId = ref('')
-const companyName = ref('')
-const jobTitle = ref('')
-const jobDescription = ref('')
-const companyInfo = ref('')
-const optimizationBasis = ref<OptimizationBasis | null>(null)
-const analysisError = ref('')
-const basisStale = ref(false)
-const generatedContent = ref('')
-const errorMsg = ref('')
-const savedSuccess = ref(false)
-const savedResumeId = ref('')
-const activeTab = ref<'preview' | 'source'>('preview')
-const showApiKeyWarning = ref(true)
-const expandedBasisSections = ref<Set<string>>(new Set())
+const {
+  customizeSelectedResumeId: selectedResumeId,
+  customizeCompanyName: companyName,
+  customizeJobTitle: jobTitle,
+  customizeJobDescription: jobDescription,
+  customizeCompanyInfo: companyInfo,
+  customizeOptimizationBasis: optimizationBasis,
+  customizeAnalysisError: analysisError,
+  customizeBasisStale: basisStale,
+  customizeGeneratedContent: generatedContent,
+  customizeErrorMsg: errorMsg,
+  customizeSavedSuccess: savedSuccess,
+  customizeSavedResumeId: savedResumeId,
+  customizeActiveTab: activeTab,
+  customizeShowApiKeyWarning: showApiKeyWarning,
+  customizeExpandedBasisSections: expandedBasisSections,
+} = storeToRefs(aiStore)
 
 const selectedResume = computed(() =>
   resumeStore.resumes.find((r) => r.id === selectedResumeId.value)
@@ -186,6 +190,11 @@ function dismissApiKeyWarning() {
   showApiKeyWarning.value = false
 }
 
+function resetCustomizeDraft() {
+  if (isBusy.value) return
+  aiStore.resetCustomizeDraft()
+}
+
 function cleanGeneratedContent(content: string): string {
   return content
     .replace(/^```markdown\s*/i, '')
@@ -287,8 +296,22 @@ function exportTxt() {
 <template>
   <div class="h-full min-h-0 flex flex-col bg-gray-50">
     <header class="px-5 py-5 bg-white border-b border-gray-100 lg:px-8">
-      <h1 class="text-2xl font-semibold text-primary">简历定制</h1>
-      <p class="text-sm text-gray-500 mt-1">选择简历、填写岗位信息，先分析优化依据，也可以直接生成定向简历</p>
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 class="text-2xl font-semibold text-primary">简历定制</h1>
+          <p class="text-sm text-gray-500 mt-1">选择简历、填写岗位信息，先分析优化依据，也可以直接生成定向简历</p>
+        </div>
+        <button
+          type="button"
+          :disabled="isBusy"
+          class="inline-flex w-fit items-center justify-center gap-2 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          title="清空当前定制草稿"
+          @click="resetCustomizeDraft"
+        >
+          <RotateCcw class="h-4 w-4" />
+          一键重置
+        </button>
+      </div>
     </header>
 
     <main class="flex-1 min-h-0 overflow-auto p-4 lg:overflow-hidden lg:px-8 lg:py-6">
