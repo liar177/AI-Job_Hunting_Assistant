@@ -7,6 +7,19 @@ export const STORAGE_KEYS = {
   AI_CONFIG: 'job_assistant_ai_config',
 } as const
 
+export const DEFAULT_AI_CONFIG: AIConfig = {
+  id: 'default',
+  provider: 'deepseek',
+  apiKey: '',
+  model: 'deepseek-chat',
+  baseUrl: 'https://api.deepseek.com/v1',
+  ragMode: 'auto',
+  embeddingProvider: 'aliyun-bailian',
+  embeddingApiKey: '',
+  embeddingModel: 'text-embedding-v4',
+  embeddingEndpoint: 'https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding',
+}
+
 // 生成唯一ID
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9)
@@ -148,17 +161,11 @@ export const aiConfigDb = {
   get(): AIConfig {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.AI_CONFIG)
-      if (data) return JSON.parse(data)
+      if (data) return { ...DEFAULT_AI_CONFIG, ...JSON.parse(data) }
     } catch {
       // 解析失败时返回默认配置
     }
-    return {
-      id: 'default',
-      provider: 'deepseek',
-      apiKey: '',
-      model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com/v1',
-    }
+    return DEFAULT_AI_CONFIG
   },
 
   save(config: Partial<AIConfig>): AIConfig {

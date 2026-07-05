@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useResumeStore } from '@/stores/resume'
-import { renderMarkdown, downloadMarkdown, cleanLegacyDocStyleNoiseFromMarkdown } from '@/utils/markdown'
+import { renderMarkdown, downloadMarkdown, downloadPdf, cleanLegacyDocStyleNoiseFromMarkdown } from '@/utils/markdown'
 import { formatDate } from '@/utils/constants'
 import { showSuccess, showError } from '@/utils/message'
 import { ArrowLeft, Save, FileDown, FileText, Pencil, Check, X, Eye } from 'lucide-vue-next'
@@ -17,16 +17,8 @@ const content = ref('')
 
 const renderedHtml = computed(() => renderMarkdown(content.value))
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
-
-function loadResumeData(id: string) {
-  const resume = store.loadResume(id)
+async function loadResumeData(id: string) {
+  const resume = await store.loadResume(id)
   if (!resume) {
     router.push('/resumes')
     return
@@ -51,11 +43,11 @@ function startEditTitle() {
   titleEditing.value = true
 }
 
-function saveTitle() {
+async function saveTitle() {
   if (!store.currentResume) return
   const t = titleInput.value.trim()
   if (!t) return
-  store.updateResume(store.currentResume.id, { title: t })
+  await store.updateResume(store.currentResume.id, { title: t })
   titleEditing.value = false
 }
 
@@ -65,73 +57,32 @@ function cancelEditTitle() {
   titleEditing.value = false
 }
 
-function saveResume() {
+async function saveResume() {
   if (!store.currentResume) return
-  store.updateResume(store.currentResume.id, { content: content.value })
+  await store.updateResume(store.currentResume.id, { content: content.value })
   showSuccess('保存成功')
 }
 
-function exportMd() {
+async function exportMd() {
   if (!store.currentResume) return
-  downloadMarkdown(content.value, `${store.currentResume.title}.md`)
-  showSuccess('Markdown 已开始下载')
+  try {
+    const savedPath = await downloadMarkdown(content.value, `${store.currentResume.title}.md`)
+    if (savedPath === null) return
+    showSuccess(savedPath ? `Markdown 已导出：${savedPath}` : 'Markdown 已开始下载')
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Markdown 导出失败')
+  }
 }
 
-function exportPdf() {
+async function exportPdf() {
   if (!store.currentResume) return
-  const printWindow = window.open('', '_blank')
-  if (!printWindow) {
-    showError('无法打开 PDF 导出窗口，请检查浏览器弹窗设置')
-    return
+  try {
+    const savedPath = await downloadPdf(content.value, `${store.currentResume.title}.pdf`, store.currentResume.title)
+    if (savedPath === null) return
+    showSuccess(savedPath ? `PDF 已导出：${savedPath}` : '已打开 PDF 导出窗口，请选择另存为 PDF')
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'PDF 导出失败')
   }
-
-  printWindow.document.write(`
-    <!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>${escapeHtml(store.currentResume.title)}</title>
-        <style>
-          body {
-            margin: 0;
-            padding: 32px 42px;
-            color: #24292f;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
-            font-size: 15px;
-            line-height: 1.72;
-          }
-          h1, h2, h3, h4, h5, h6 {
-            margin: 1.25em 0 0.6em;
-            color: #111827;
-            font-weight: 700;
-            line-height: 1.28;
-          }
-          h1 { padding-bottom: 0.28em; border-bottom: 1px solid #e5e7eb; font-size: 2em; }
-          h2 { padding-bottom: 0.22em; border-bottom: 1px solid #edf0f3; font-size: 1.6em; }
-          h3 { font-size: 1.3em; }
-          h4 { font-size: 1.12em; }
-          h5 { font-size: 1em; }
-          h6 { color: #6b7280; font-size: 0.9em; }
-          p { margin: 0 0 1em; }
-          ul, ol { margin: 0 0 1em; padding-left: 1.6em; }
-          li { margin: 0.3em 0; }
-          blockquote { margin: 1em 0; padding-left: 1em; border-left: 4px solid #d0d7de; color: #57606a; }
-          code { padding: 0.15em 0.35em; border-radius: 4px; background: #f3f4f6; color: #be123c; }
-          pre { padding: 14px; overflow-x: auto; border-radius: 8px; background: #f6f8fa; }
-          pre code { padding: 0; background: transparent; color: inherit; }
-          table { width: 100%; margin: 1em 0; border-collapse: collapse; }
-          th, td { padding: 8px 10px; border: 1px solid #d0d7de; }
-          th { background: #f6f8fa; }
-          @page { margin: 18mm; }
-        </style>
-      </head>
-      <body>${renderedHtml.value}</body>
-    </html>
-  `)
-  printWindow.document.close()
-  printWindow.focus()
-  printWindow.print()
-  showSuccess('已打开 PDF 导出窗口，请选择另存为 PDF')
 }
 </script>
 

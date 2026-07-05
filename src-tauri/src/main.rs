@@ -1,0 +1,45 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod commands;
+mod db;
+mod exporter;
+mod models;
+mod rag;
+
+use tauri::Manager;
+
+fn main() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            let app_dir = app
+                .path()
+                .app_data_dir()
+                .expect("failed to resolve app data directory");
+            let database = db::Database::new(&app_dir).expect("failed to initialize database");
+            app.manage(database);
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::get_resumes,
+            commands::get_resume,
+            commands::create_resume,
+            commands::update_resume,
+            commands::delete_resume,
+            commands::get_applications,
+            commands::get_application,
+            commands::create_application,
+            commands::update_application,
+            commands::delete_application,
+            commands::get_ai_config,
+            commands::save_ai_config,
+            commands::export_text_file,
+            commands::export_pdf_file,
+            commands::rag_index_resume,
+            commands::rag_delete_resume_index,
+            commands::rag_match_resume_job,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

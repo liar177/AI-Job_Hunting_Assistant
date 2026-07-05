@@ -27,8 +27,9 @@ const recentApplications = computed(() => applicationStore.applications.slice(0,
 const aiConfigured = computed(() => !!aiStore.config.apiKey)
 
 onMounted(() => {
-  resumeStore.loadResumes()
-  applicationStore.loadApplications()
+  void resumeStore.loadResumes()
+  void applicationStore.loadApplications()
+  void aiStore.loadConfig()
 })
 
 // 快捷操作

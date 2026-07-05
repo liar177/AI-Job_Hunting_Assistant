@@ -8,6 +8,11 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
 // https://vite.dev/config/
 export default defineConfig({
+  server: {
+    host: '127.0.0.1',
+    port: 1420,
+    strictPort: true,
+  },
   build: {
     sourcemap: 'hidden',
   },
@@ -17,7 +22,7 @@ export default defineConfig({
     AutoImport({
       resolvers: [ElementPlusResolver()],
     }),
-    traeBadgePlugin({
+    !process.env.TAURI_ENV_PLATFORM && traeBadgePlugin({
       variant: 'dark',
       position: 'bottom-right',
       prodOnly: true,
@@ -26,7 +31,7 @@ export default defineConfig({
       autoTheme: true,
       autoThemeTarget: '#app',
     }),
-  ],
+  ].filter(Boolean),
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'), // ✅ 定义 @ = src

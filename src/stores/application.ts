@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Application, ApplicationStatus } from '@/types'
-import { applicationDb } from '@/utils/db'
+import type { Application, ApplicationInput, ApplicationStatus } from '@/types'
+import { db } from '@/utils/db-adapter'
 
 export const useApplicationStore = defineStore('application', () => {
   const applications = ref<Application[]>([])
@@ -41,35 +41,28 @@ export const useApplicationStore = defineStore('application', () => {
   })
 
   // 加载所有投递记录
-  function loadApplications() {
-    applications.value = applicationDb.getAll()
+  async function loadApplications() {
+    applications.value = await db.applications.getAll()
   }
 
   // 加载单个投递记录
-  function loadApplication(id: string) {
-    currentApplication.value = applicationDb.getById(id) || null
+  async function loadApplication(id: string) {
+    currentApplication.value = await db.applications.getById(id) || null
     return currentApplication.value
   }
 
   // 创建投递记录
-  function createApplication(data: {
-    companyName: string
-    jobTitle: string
-    jobDescription: string
-    companyInfo: string
-    resumeId: string
-    notes?: string
-  }) {
-    const application = applicationDb.create(data)
-    loadApplications()
+  async function createApplication(data: ApplicationInput) {
+    const application = await db.applications.create(data)
+    await loadApplications()
     return application
   }
 
   // 更新投递记录
-  function updateApplication(id: string, data: Partial<Application>) {
-    const application = applicationDb.update(id, data)
+  async function updateApplication(id: string, data: Partial<Application>) {
+    const application = await db.applications.update(id, data)
     if (application) {
-      loadApplications()
+      await loadApplications()
       if (currentApplication.value?.id === id) {
         currentApplication.value = application
       }
@@ -78,14 +71,14 @@ export const useApplicationStore = defineStore('application', () => {
   }
 
   // 更新状态
-  function updateStatus(id: string, status: ApplicationStatus) {
+  async function updateStatus(id: string, status: ApplicationStatus) {
     return updateApplication(id, { status })
   }
 
   // 删除投递记录
-  function deleteApplication(id: string) {
-    applicationDb.delete(id)
-    loadApplications()
+  async function deleteApplication(id: string) {
+    await db.applications.delete(id)
+    await loadApplications()
     if (currentApplication.value?.id === id) {
       currentApplication.value = null
     }

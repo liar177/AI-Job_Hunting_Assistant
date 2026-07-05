@@ -3,7 +3,10 @@ import { ref, onMounted } from 'vue'
 import { useAIStore } from '@/stores/ai'
 import { useResumeStore } from '@/stores/resume'
 import { useApplicationStore } from '@/stores/application'
-import { STORAGE_KEYS } from '@/utils/db'
+import { DEFAULT_AI_CONFIG } from '@/utils/db'
+import { db } from '@/utils/db-adapter'
+import { downloadFile } from '@/utils/markdown'
+import { showError, showSuccess } from '@/utils/message'
 import {
   Key, Eye, EyeOff, Save, Zap, Loader2, Database, Download,
   Trash2, CheckCircle, XCircle, Info,
@@ -19,7 +22,14 @@ const provider = ref<AIConfig['provider']>('deepseek')
 const apiKey = ref('')
 const baseUrl = ref('')
 const model = ref('')
+const ragMode = ref<AIConfig['ragMode']>('auto')
+const embeddingProvider = ref<AIConfig['embeddingProvider']>('aliyun-bailian')
+const embeddingApiKey = ref('')
+const embeddingModel = ref('')
+const embeddingEndpoint = ref('')
+const embeddingDimension = ref<number | undefined>()
 const showApiKey = ref(false)
+const showEmbeddingApiKey = ref(false)
 
 // UI 状态
 const saving = ref(false)
@@ -29,29 +39,47 @@ const testMessage = ref('')
 const saveSuccess = ref(false)
 const confirmingClear = ref(false)
 
-onMounted(() => {
-  provider.value = aiStore.config.provider
-  apiKey.value = aiStore.config.apiKey
-  baseUrl.value = aiStore.config.baseUrl
-  model.value = aiStore.config.model
-  resumeStore.loadResumes()
-  applicationStore.loadApplications()
+onMounted(async () => {
+  const config = await aiStore.loadConfig()
+  provider.value = config.provider
+  apiKey.value = config.apiKey
+  baseUrl.value = config.baseUrl
+  model.value = config.model
+  ragMode.value = config.ragMode
+  embeddingProvider.value = config.embeddingProvider
+  embeddingApiKey.value = config.embeddingApiKey
+  embeddingModel.value = config.embeddingModel
+  embeddingEndpoint.value = config.embeddingEndpoint
+  embeddingDimension.value = config.embeddingDimension
+  await Promise.all([
+    resumeStore.loadResumes(),
+    applicationStore.loadApplications(),
+  ])
 })
 
 function onProviderChange() {
   if (provider.value === 'deepseek') {
     baseUrl.value = 'https://api.deepseek.com/v1'
     model.value = 'deepseek-chat'
+  } else if (provider.value === 'aliyun-bailian') {
+    baseUrl.value = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+    model.value = 'qwen-plus'
   }
 }
 
-function saveConfig() {
+async function saveConfig() {
   saving.value = true
-  aiStore.saveConfig({
+  await aiStore.saveConfig({
     provider: provider.value,
     apiKey: apiKey.value,
     baseUrl: baseUrl.value,
     model: model.value,
+    ragMode: ragMode.value,
+    embeddingProvider: embeddingProvider.value,
+    embeddingApiKey: embeddingApiKey.value,
+    embeddingModel: embeddingModel.value,
+    embeddingEndpoint: embeddingEndpoint.value,
+    embeddingDimension: embeddingDimension.value,
   })
   saving.value = false
   saveSuccess.value = true
@@ -62,11 +90,17 @@ async function testConnection() {
   testing.value = true
   testResult.value = null
   // 先保存配置，确保测试使用最新配置
-  aiStore.saveConfig({
+  await aiStore.saveConfig({
     provider: provider.value,
     apiKey: apiKey.value,
     baseUrl: baseUrl.value,
     model: model.value,
+    ragMode: ragMode.value,
+    embeddingProvider: embeddingProvider.value,
+    embeddingApiKey: embeddingApiKey.value,
+    embeddingModel: embeddingModel.value,
+    embeddingEndpoint: embeddingEndpoint.value,
+    embeddingDimension: embeddingDimension.value,
   })
   const ok = await aiStore.testConnection()
   testResult.value = ok ? 'success' : 'fail'
@@ -74,49 +108,55 @@ async function testConnection() {
   testing.value = false
 }
 
-function exportData() {
-  const data: Record<string, unknown> = {}
-  const keys = Object.values(STORAGE_KEYS)
-  for (const key of keys) {
-    try {
-      data[key] = JSON.parse(localStorage.getItem(key) || 'null')
-    } catch {
-      data[key] = null
+async function exportData() {
+  try {
+    const data: Record<string, unknown> = {
+      resumes: await db.resumes.getAll(),
+      applications: await db.applications.getAll(),
+      aiConfig: await db.aiConfig.get(),
     }
+    data._exportedAt = new Date().toISOString()
+    const savedPath = await downloadFile(
+      JSON.stringify(data, null, 2),
+      `job-assistant-backup-${Date.now()}.json`,
+      'application/json;charset=utf-8'
+    )
+    if (savedPath === null) return
+    showSuccess(savedPath ? `数据已导出：${savedPath}` : '数据已开始下载')
+  } catch (error) {
+    showError(error instanceof Error ? error.message : '数据导出失败')
   }
-  data._exportedAt = new Date().toISOString()
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `job-assistant-backup-${Date.now()}.json`
-  a.click()
-  URL.revokeObjectURL(url)
 }
 
-function clearAllData() {
+async function clearAllData() {
   if (!confirmingClear.value) {
     confirmingClear.value = true
     setTimeout(() => { confirmingClear.value = false }, 5000)
     return
   }
-  localStorage.removeItem(STORAGE_KEYS.RESUMES)
-  localStorage.removeItem(STORAGE_KEYS.APPLICATIONS)
-  localStorage.removeItem(STORAGE_KEYS.AI_CONFIG)
-  // 重置为默认配置
-  const defaultConfig = {
-    provider: 'deepseek' as const,
-    apiKey: '',
-    baseUrl: 'https://api.deepseek.com/v1',
-    model: 'deepseek-chat',
+  const applications = await db.applications.getAll()
+  for (const item of applications) {
+    await db.applications.delete(item.id)
   }
-  aiStore.saveConfig(defaultConfig)
+  const resumes = await db.resumes.getAll()
+  for (const item of resumes) {
+    await db.resumes.delete(item.id)
+  }
+  const defaultConfig = await aiStore.saveConfig(DEFAULT_AI_CONFIG)
   provider.value = defaultConfig.provider
-  apiKey.value = ''
+  apiKey.value = defaultConfig.apiKey
   baseUrl.value = defaultConfig.baseUrl
   model.value = defaultConfig.model
-  resumeStore.loadResumes()
-  applicationStore.loadApplications()
+  ragMode.value = defaultConfig.ragMode
+  embeddingProvider.value = defaultConfig.embeddingProvider
+  embeddingApiKey.value = defaultConfig.embeddingApiKey
+  embeddingModel.value = defaultConfig.embeddingModel
+  embeddingEndpoint.value = defaultConfig.embeddingEndpoint
+  embeddingDimension.value = defaultConfig.embeddingDimension
+  await Promise.all([
+    resumeStore.loadResumes(),
+    applicationStore.loadApplications(),
+  ])
   confirmingClear.value = false
 }
 </script>
@@ -148,6 +188,7 @@ function clearAllData() {
                 class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
                 <option value="deepseek">DeepSeek</option>
+                <option value="aliyun-bailian">阿里云百炼</option>
                 <option value="custom">自定义</option>
               </select>
             </div>
@@ -195,6 +236,91 @@ function clearAllData() {
               />
             </div>
 
+            <div class="border-t border-gray-100 pt-4">
+              <div class="mb-3">
+                <h3 class="text-sm font-semibold text-gray-800">RAG 语义匹配配置</h3>
+                <p class="mt-1 text-xs leading-5 text-gray-500">默认使用阿里云百炼 text-embedding-v4；未配置或调用失败时自动降级为本地关键词匹配。</p>
+              </div>
+
+              <div class="space-y-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1.5">匹配模式</label>
+                  <select
+                    v-model="ragMode"
+                    class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="auto">自动（优先语义向量，失败降级关键词）</option>
+                    <option value="embedding">仅语义向量</option>
+                    <option value="keyword">仅关键词匹配</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1.5">Embedding Provider</label>
+                  <select
+                    v-model="embeddingProvider"
+                    class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="aliyun-bailian">阿里云百炼</option>
+                    <option value="openai-compatible">OpenAI 兼容</option>
+                    <option value="custom">自定义</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1.5">Embedding API Key</label>
+                  <div class="relative">
+                    <input
+                      v-model="embeddingApiKey"
+                      :type="showEmbeddingApiKey ? 'text' : 'password'"
+                      placeholder="输入百炼 DashScope API Key..."
+                      class="w-full px-3 py-2 pr-10 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                    />
+                    <button
+                      type="button"
+                      @click="showEmbeddingApiKey = !showEmbeddingApiKey"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      <Eye v-if="!showEmbeddingApiKey" class="w-4 h-4" />
+                      <EyeOff v-else class="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1.5">Embedding Model</label>
+                    <input
+                      v-model="embeddingModel"
+                      type="text"
+                      placeholder="text-embedding-v4"
+                      class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1.5">Dimension（可选）</label>
+                    <input
+                      v-model.number="embeddingDimension"
+                      type="number"
+                      min="1"
+                      placeholder="留空使用模型默认"
+                      class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1.5">Embedding Endpoint</label>
+                  <input
+                    v-model="embeddingEndpoint"
+                    type="text"
+                    placeholder="https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding"
+                    class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              </div>
+            </div>
+
             <!-- 操作按钮 -->
             <div class="flex flex-wrap items-center gap-2 pt-2">
               <button
@@ -236,7 +362,7 @@ function clearAllData() {
             <Database class="w-5 h-5 text-primary" />
             数据管理
           </div>
-          <p class="text-xs text-gray-500 mb-5">所有数据存储在浏览器本地</p>
+          <p class="text-xs text-gray-500 mb-5">浏览器模式存储在 localStorage；桌面端将存储在本机 SQLite 数据库。</p>
 
           <!-- 数据统计 -->
           <div class="grid grid-cols-2 gap-3 mb-5">
@@ -291,7 +417,7 @@ function clearAllData() {
             </div>
             <div class="pt-2 border-t border-gray-100 mt-3">
               <p class="text-xs text-gray-500 leading-relaxed">
-                所有数据（简历、投递记录、AI 配置）均存储在浏览器本地（localStorage），不会上传到任何服务器。清空浏览器缓存将导致数据丢失，请定期使用"导出数据"功能备份。
+                桌面端数据会保存在本机数据库中；浏览器模式仍使用 localStorage。AI 与 Embedding 仅在你配置 API Key 后调用对应服务，请定期使用"导出数据"功能备份。
               </p>
             </div>
           </div>

@@ -5,7 +5,8 @@ import { useRouter, useRoute } from 'vue-router'
 import { useResumeStore } from '@/stores/resume'
 import { useAIStore } from '@/stores/ai'
 import type { Resume } from '@/types'
-import { showSuccess } from '@/utils/message'
+import { db } from '@/utils/db-adapter'
+import { showError, showSuccess } from '@/utils/message'
 import { downloadMarkdown, downloadText, renderMarkdown } from '@/utils/markdown'
 import { ArrowDown,ArrowUp } from '@element-plus/icons-vue'
 import {
@@ -153,8 +154,11 @@ function getSourceTypeLabel(resume: Resume): string {
   return labels[sourceType] || sourceType.toUpperCase()
 }
 
-onMounted(() => {
-  resumeStore.loadResumes()
+onMounted(async () => {
+  await Promise.all([
+    resumeStore.loadResumes(),
+    aiStore.loadConfig(),
+  ])
   const resumeId = route.query.resumeId as string
   if (resumeId) {
     selectedResumeId.value = resumeId
@@ -211,12 +215,19 @@ async function handleAnalyze() {
   savedSuccess.value = false
   savedResumeId.value = ''
 
-  const result = await aiStore.analyze({
+  const request = {
+    resumeId: selectedResume.value.id,
     resumeContent: selectedResume.value.content,
     companyName: companyName.value,
     jobTitle: jobTitle.value,
     jobDescription: jobDescription.value,
     companyInfo: companyInfo.value,
+  }
+  const rag = await db.rag.matchResumeJob(request)
+
+  const result = await aiStore.analyze({
+    ...request,
+    rag,
   })
 
   if (result.success && result.data) {
@@ -245,6 +256,7 @@ async function handleGenerate(useBasis = true) {
     jobDescription: jobDescription.value,
     companyInfo: companyInfo.value,
     optimizationBasis: useBasis ? optimizationBasis.value || undefined : undefined,
+    rag: optimizationBasis.value?.rag,
   })
 
   if (result.success) {
@@ -255,12 +267,12 @@ async function handleGenerate(useBasis = true) {
   }
 }
 
-function saveAsNewResume() {
+async function saveAsNewResume() {
   if (!generatedContent.value) return
 
   const cleanContent = cleanGeneratedContent(generatedContent.value)
   const title = `${companyName.value}-${jobTitle.value}-定制简历`
-  const newResume = resumeStore.createResume({
+  const newResume = await resumeStore.createResume({
     title,
     content: cleanContent,
     originalContent: cleanContent,
@@ -282,14 +294,26 @@ function updateGeneratedContent(value: string) {
   savedResumeId.value = ''
 }
 
-function exportMd() {
+async function exportMd() {
   if (!generatedContent.value) return
-  downloadMarkdown(generatedContent.value, `${companyName.value}-${jobTitle.value}-定制简历.md`)
+  try {
+    const savedPath = await downloadMarkdown(generatedContent.value, `${companyName.value}-${jobTitle.value}-定制简历.md`)
+    if (savedPath === null) return
+    showSuccess(savedPath ? `Markdown 已导出：${savedPath}` : 'Markdown 已开始下载')
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Markdown 导出失败')
+  }
 }
 
-function exportTxt() {
+async function exportTxt() {
   if (!generatedContent.value) return
-  downloadText(generatedContent.value, `${companyName.value}-${jobTitle.value}-定制简历.txt`)
+  try {
+    const savedPath = await downloadText(generatedContent.value, `${companyName.value}-${jobTitle.value}-定制简历.txt`)
+    if (savedPath === null) return
+    showSuccess(savedPath ? `TXT 已导出：${savedPath}` : 'TXT 已开始下载')
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'TXT 导出失败')
+  }
 }
 </script>
 
@@ -492,6 +516,46 @@ function exportTxt() {
                   ></div>
                 </div>
                 <p class="mt-3 text-sm leading-6 text-gray-700">{{ optimizationBasis.fitSummary }}</p>
+                <div v-if="optimizationBasis.rag" class="mt-3 rounded-lg border border-gray-100 bg-white/70 p-3">
+                  <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <span class="text-xs font-semibold text-gray-700">RAG 匹配证据</span>
+                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+                      {{ optimizationBasis.rag.retrievalMode === 'embedding' ? '语义向量' : '关键词匹配' }}
+                    </span>
+                  </div>
+                  <p v-if="optimizationBasis.rag.warning" class="mb-2 text-xs leading-5 text-amber-700">
+                    {{ optimizationBasis.rag.warning }}
+                  </p>
+                  <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div
+                      v-for="score in optimizationBasis.rag.dimensionScores"
+                      :key="score.dimension"
+                      class="rounded-md bg-gray-50 px-2.5 py-2"
+                    >
+                      <div class="mb-1 flex items-center justify-between gap-2 text-xs">
+                        <span class="font-medium text-gray-600">{{ score.dimension }}</span>
+                        <span class="text-gray-500">{{ score.score }}%</span>
+                      </div>
+                      <div class="h-1.5 overflow-hidden rounded-full bg-gray-200">
+                        <div class="h-full rounded-full bg-accent" :style="{ width: `${score.score}%` }"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="optimizationBasis.rag.topChunks.length" class="mt-3 space-y-2">
+                    <p class="text-xs font-semibold text-gray-700">最相关片段</p>
+                    <div
+                      v-for="chunk in optimizationBasis.rag.topChunks.slice(0, 3)"
+                      :key="chunk.chunkId"
+                      class="rounded-md border border-gray-100 bg-gray-50 p-2"
+                    >
+                      <div class="mb-1 flex items-center justify-between gap-2 text-xs">
+                        <span class="font-medium text-gray-600">{{ chunk.sectionTitle }}</span>
+                        <span class="text-gray-500">{{ chunk.score }}%</span>
+                      </div>
+                      <p class="line-clamp-2 text-xs leading-5 text-gray-500">{{ chunk.text }}</p>
+                    </div>
+                  </div>
+                </div>
                 <p v-if="basisStale" class="mt-2 text-xs leading-5 text-amber-600">
                   左侧信息已调整，当前依据可能已过期，可重新分析后再生成。
                 </p>

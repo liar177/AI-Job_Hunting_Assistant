@@ -4,6 +4,7 @@ export interface Resume {
   title: string
   content: string
   originalContent: string
+  sourceType?: string
   version: number
   createdAt: string
   updatedAt: string
@@ -14,6 +15,7 @@ export interface ResumeInput {
   title: string
   content: string
   originalContent: string
+  sourceType?: string
 }
 
 // 投递状态类型
@@ -55,19 +57,49 @@ export interface ApplicationInput {
 // AI配置类型
 export interface AIConfig {
   id: string
-  provider: 'deepseek' | 'custom'
+  provider: 'deepseek' | 'aliyun-bailian' | 'custom'
   apiKey: string
   model: string
   baseUrl: string
+  ragMode: 'auto' | 'embedding' | 'keyword'
+  embeddingProvider: 'aliyun-bailian' | 'openai-compatible' | 'custom'
+  embeddingApiKey: string
+  embeddingModel: string
+  embeddingEndpoint: string
+  embeddingDimension?: number
+}
+
+export interface RagDimensionScore {
+  dimension: string
+  score: number
+  weight: number
+}
+
+export interface RagChunkMatch {
+  chunkId: string
+  chunkType: string
+  sectionTitle: string
+  text: string
+  score: number
+}
+
+export interface RagMatchResult {
+  overallScore: number
+  retrievalMode: 'embedding' | 'keyword'
+  dimensionScores: RagDimensionScore[]
+  topChunks: RagChunkMatch[]
+  warning?: string
 }
 
 // AI分析请求类型
 export interface AnalyzeRequest {
+  resumeId?: string
   resumeContent: string
   companyName: string
   jobTitle: string
   jobDescription: string
   companyInfo: string
+  rag?: RagMatchResult
 }
 
 // 简历优化依据类型
@@ -80,6 +112,7 @@ export interface OptimizationBasis {
   keywordStrategy: string[]
   rewriteStrategy: string[]
   riskNotes: string[]
+  rag?: RagMatchResult
 }
 
 // AI分析响应类型

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { Resume } from '@/types'
-import { resumeDb } from '@/utils/db'
+import type { Resume, ResumeInput } from '@/types'
+import { db } from '@/utils/db-adapter'
 
 export const useResumeStore = defineStore('resume', () => {
   const resumes = ref<Resume[]>([])
@@ -9,39 +9,47 @@ export const useResumeStore = defineStore('resume', () => {
   const currentResume = ref<Resume | null>(null)
 
   // 加载所有简历
-  function loadResumes() {
-    resumes.value = resumeDb.getAll()
+  async function loadResumes() {
+    loading.value = true
+    try {
+      resumes.value = await db.resumes.getAll()
+    } finally {
+      loading.value = false
+    }
   }
 
   // 加载单个简历
-  function loadResume(id: string) {
-    currentResume.value = resumeDb.getById(id) || null
+  async function loadResume(id: string) {
+    currentResume.value = await db.resumes.getById(id) || null
     return currentResume.value
   }
 
   // 创建简历
-  function createResume(data: { title: string; content: string; originalContent: string; sourceType?: string }) {
-    const resume = resumeDb.create(data)
-    loadResumes()
+  async function createResume(data: ResumeInput) {
+    const resume = await db.resumes.create(data)
+    await loadResumes()
+    void db.rag.indexResume(resume.id).catch(() => {})
     return resume
   }
 
   // 更新简历
-  function updateResume(id: string, data: { title?: string; content?: string }) {
-    const resume = resumeDb.update(id, data)
+  async function updateResume(id: string, data: { title?: string; content?: string }) {
+    const resume = await db.resumes.update(id, data)
     if (resume) {
-      loadResumes()
+      await loadResumes()
       if (currentResume.value?.id === id) {
         currentResume.value = resume
       }
+      void db.rag.indexResume(resume.id).catch(() => {})
     }
     return resume
   }
 
   // 删除简历
-  function deleteResume(id: string) {
-    resumeDb.delete(id)
-    loadResumes()
+  async function deleteResume(id: string) {
+    await db.resumes.delete(id)
+    await db.rag.deleteResumeIndex(id).catch(() => {})
+    await loadResumes()
     if (currentResume.value?.id === id) {
       currentResume.value = null
     }

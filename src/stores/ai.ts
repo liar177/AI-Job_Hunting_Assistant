@@ -8,13 +8,14 @@ import type {
   GenerateResponse,
   OptimizationBasis,
 } from '@/types'
-import { aiConfigDb } from '@/utils/db'
+import { DEFAULT_AI_CONFIG } from '@/utils/db'
+import { db } from '@/utils/db-adapter'
 import { analyzeResumeOptimizationBasis, generateResume, testAIConnection } from '@/utils/ai'
 
 type CustomizeActiveTab = 'preview' | 'source'
 
 export const useAIStore = defineStore('ai', () => {
-  const config = ref<AIConfig>(aiConfigDb.get())
+  const config = ref<AIConfig>(DEFAULT_AI_CONFIG)
   const analyzing = ref(false)
   const generating = ref(false)
   const optimizationBasis = ref<OptimizationBasis | null>(null)
@@ -36,9 +37,15 @@ export const useAIStore = defineStore('ai', () => {
   const customizeShowApiKeyWarning = ref(true)
   const customizeExpandedBasisSections = ref<Set<string>>(new Set())
 
+  async function loadConfig() {
+    config.value = await db.aiConfig.get()
+    return config.value
+  }
+
   // 保存配置
-  function saveConfig(data: Partial<AIConfig>) {
-    config.value = aiConfigDb.save(data)
+  async function saveConfig(data: Partial<AIConfig>) {
+    config.value = await db.aiConfig.save(data)
+    return config.value
   }
 
   // 分析简历优化依据
@@ -112,6 +119,7 @@ export const useAIStore = defineStore('ai', () => {
     customizeActiveTab,
     customizeShowApiKeyWarning,
     customizeExpandedBasisSections,
+    loadConfig,
     saveConfig,
     analyze,
     generate,

@@ -1,6 +1,9 @@
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
+import { invokeTauri, isTauri } from './platform'
+
+type DownloadResult = string | null | undefined
 
 type PdfTextItem = {
   str: string
@@ -52,26 +55,160 @@ export function cleanLegacyDocStyleNoiseFromMarkdown(content: string): string {
   )
 }
 
-// 导出Markdown为文件
-export function downloadMarkdown(content: string, filename: string = 'resume.md') {
-  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+function downloadBlob(content: string, filename: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  a.style.display = 'none'
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  a.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+export async function downloadFile(
+  content: string,
+  filename: string,
+  mimeType: string = 'text/plain;charset=utf-8'
+): Promise<DownloadResult> {
+  if (isTauri()) {
+    const path = await selectSavePath(filename)
+    if (!path) return null
+    return invokeTauri<string>('export_text_file', { path, content })
+  }
+
+  downloadBlob(content, filename, mimeType)
+  return undefined
+}
+
+// 导出Markdown为文件
+export async function downloadMarkdown(content: string, filename: string = 'resume.md'): Promise<DownloadResult> {
+  return downloadFile(content, filename, 'text/markdown;charset=utf-8')
 }
 
 // 导出为文本文件
-export function downloadText(content: string, filename: string) {
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
+export async function downloadText(content: string, filename: string): Promise<DownloadResult> {
+  return downloadFile(content, filename, 'text/plain;charset=utf-8')
+}
+
+export async function downloadPdf(
+  content: string,
+  filename: string = 'resume.pdf',
+  title: string = '简历'
+): Promise<DownloadResult> {
+  if (isTauri()) {
+    const path = await selectSavePath(filename, [{ name: 'PDF', extensions: ['pdf'] }])
+    if (!path) return null
+    return invokeTauri<string>('export_pdf_file', { path, title, content })
+  }
+
+  const printWindow = window.open('', '_blank')
+  if (!printWindow) {
+    throw new Error('无法打开 PDF 导出窗口，请检查浏览器弹窗设置')
+  }
+
+  printWindow.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(title)}</title>
+        <style>
+          body {
+            margin: 0;
+            padding: 32px 42px;
+            color: #24292f;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+            font-size: 15px;
+            line-height: 1.72;
+          }
+          h1, h2, h3, h4, h5, h6 {
+            margin: 1.25em 0 0.6em;
+            color: #111827;
+            font-weight: 700;
+            line-height: 1.28;
+          }
+          h1 { padding-bottom: 0.28em; border-bottom: 1px solid #e5e7eb; font-size: 2em; }
+          h2 { padding-bottom: 0.22em; border-bottom: 1px solid #edf0f3; font-size: 1.6em; }
+          h3 { font-size: 1.3em; }
+          h4 { font-size: 1.12em; }
+          h5 { font-size: 1em; }
+          h6 { color: #6b7280; font-size: 0.9em; }
+          p { margin: 0 0 1em; }
+          ul, ol { margin: 0 0 1em; padding-left: 1.6em; }
+          li { margin: 0.3em 0; }
+          blockquote { margin: 1em 0; padding-left: 1em; border-left: 4px solid #d0d7de; color: #57606a; }
+          code { padding: 0.15em 0.35em; border-radius: 4px; background: #f3f4f6; color: #be123c; }
+          pre { padding: 14px; overflow-x: auto; border-radius: 8px; background: #f6f8fa; }
+          pre code { padding: 0; background: transparent; color: inherit; }
+          table { width: 100%; margin: 1em 0; border-collapse: collapse; }
+          th, td { padding: 8px 10px; border: 1px solid #d0d7de; }
+          th { background: #f6f8fa; }
+          @page { margin: 18mm; }
+        </style>
+      </head>
+      <body>${renderMarkdown(content)}</body>
+    </html>
+  `)
+  printWindow.document.close()
+  printWindow.focus()
+  printWindow.print()
+  return undefined
+}
+
+async function selectSavePath(
+  filename: string,
+  filters: Array<{ name: string; extensions: string[] }> = [filterForFilename(filename)]
+): Promise<string | null> {
+  const { save } = await import('@tauri-apps/plugin-dialog')
+  const selected = await save({
+    defaultPath: sanitizeSuggestedFilename(filename),
+    filters,
+  })
+  if (!selected) return null
+  return ensurePathExtension(selected, extensionFromFilename(filename))
+}
+
+function filterForFilename(filename: string): { name: string; extensions: string[] } {
+  const extension = extensionFromFilename(filename)
+  if (!extension) return { name: '文件', extensions: [] }
+  const names: Record<string, string> = {
+    md: 'Markdown',
+    markdown: 'Markdown',
+    txt: 'TXT',
+    json: 'JSON',
+    pdf: 'PDF',
+  }
+  return { name: names[extension] || extension.toUpperCase(), extensions: [extension] }
+}
+
+function extensionFromFilename(filename: string): string {
+  return filename.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || ''
+}
+
+function ensurePathExtension(path: string, extension: string): string {
+  if (!extension) return path
+  const filename = path.split(/[\\/]/).pop() || path
+  if (new RegExp(`\\.${extension}$`, 'i').test(filename)) return path
+  return `${path}.${extension}`
+}
+
+function sanitizeSuggestedFilename(filename: string): string {
+  const sanitized = filename
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
+    .replace(/[. ]+$/g, '')
+    .trim()
+  return sanitized || 'export.txt'
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
 }
 
 // 读取文件内容

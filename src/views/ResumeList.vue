@@ -56,11 +56,11 @@ function closeModal() {
   showModal.value = false
 }
 
-function createResume() {
+async function createResume() {
   const title = newTitle.value.trim()
   if (!title) return
   const content = newContent.value
-  const resume = store.createResume({ title, content, originalContent: content, sourceType: 'manual' })
+  const resume = await store.createResume({ title, content, originalContent: content, sourceType: 'manual' })
   showModal.value = false
   router.push(`/resumes/${resume.id}`)
 }
@@ -82,8 +82,8 @@ function handleDelete(resume: Resume) {
       cancelButtonText: '取消',
       type: 'warning',
     }
-  ).then(() => {
-    store.deleteResume(resume.id)
+  ).then(async () => {
+    await store.deleteResume(resume.id)
     ElMessage.success('删除成功')
   }).catch(() => {})
 }
@@ -99,7 +99,7 @@ async function handleFileChange(e: Event) {
   try {
     const content = await readFile(file)
     const title = file.name.replace(/\.(md|markdown|txt|doc|docx|pdf)$/i, '')
-    const resume = store.createResume({
+    const resume = await store.createResume({
       title,
       content,
       originalContent: content,

@@ -27,8 +27,8 @@ const relatedResume = computed<Resume | undefined>(() =>
   app.value ? resumeStore.resumes.find((r) => r.id === app.value!.resumeId) : undefined
 )
 
-function loadApplicationData(id: string) {
-  const loaded = store.loadApplication(id)
+async function loadApplicationData(id: string) {
+  const loaded = await store.loadApplication(id)
   if (!loaded) {
     router.push('/applications')
   }
@@ -47,9 +47,9 @@ function goBack() {
   router.push('/applications')
 }
 
-function selectStatus(status: ApplicationStatus) {
+async function selectStatus(status: ApplicationStatus) {
   if (!app.value) return
-  store.updateStatus(app.value.id, status)
+  await store.updateStatus(app.value.id, status)
   statusDropdownOpen.value = false
 }
 
@@ -58,9 +58,9 @@ function startEditNotes() {
   notesEditing.value = true
 }
 
-function saveNotes() {
+async function saveNotes() {
   if (!app.value) return
-  store.updateApplication(app.value.id, { notes: notesInput.value })
+  await store.updateApplication(app.value.id, { notes: notesInput.value })
   notesEditing.value = false
 }
 
@@ -82,8 +82,8 @@ function handleDelete() {
       cancelButtonText: '取消',
       type: 'warning',
     }
-  ).then(() => {
-    store.deleteApplication(app.value!.id)
+  ).then(async () => {
+    await store.deleteApplication(app.value!.id)
     router.push('/applications')
     ElMessage.success('删除成功')
   }).catch(() => {})

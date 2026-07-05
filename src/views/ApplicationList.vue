@@ -69,9 +69,9 @@ function closeModal() {
   showModal.value = false
 }
 
-function submitCreate() {
+async function submitCreate() {
   if (!form.value.companyName.trim() || !form.value.jobTitle.trim() || !form.value.resumeId) return
-  const app = store.createApplication({
+  const app = await store.createApplication({
     companyName: form.value.companyName.trim(),
     jobTitle: form.value.jobTitle.trim(),
     jobDescription: form.value.jobDescription,
@@ -97,8 +97,8 @@ function handleDelete(id: string, companyName: string, jobTitle: string, event: 
       cancelButtonText: '取消',
       type: 'warning',
     }
-  ).then(() => {
-    store.deleteApplication(id)
+  ).then(async () => {
+    await store.deleteApplication(id)
     ElMessage.success('删除成功')
   }).catch(() => {})
 }
@@ -332,5 +332,4 @@ function handleDelete(id: string, companyName: string, jobTitle: string, event: 
     </div>
   </div>
 </template>
-
 
