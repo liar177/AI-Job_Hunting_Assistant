@@ -1,3 +1,14 @@
+// AI API 调用层 —— Prompt 模板 + LLM 通信 + 防御性解析
+//
+// 整个 AI 功能的三个核心模块都在此文件中：
+//   1. Prompt 工程（两个 Prompt 模板，控制 LLM 行为）
+//   2. API 通信（OpenAI 兼容的 chat/completions 调用）
+//   3. 防御性解析（cleanJsonContent + normalizeOptimizationBasis）
+//
+// 两个 Prompt 的设计思路：
+//   - 分析 Prompt（温度 0.4）：结构化 JSON 输出，低温度保证稳定性
+//   - 生成 Prompt（温度 0.7）：创意性 Markdown 输出，适当提高温度
+
 import type {
   AIConfig,
   AnalyzeRequest,
@@ -9,6 +20,13 @@ import type {
 import { db } from './db-adapter'
 import { formatRagContext } from './rag'
 
+/**
+ * 默认优化依据 —— 当 LLM 返回的 JSON 不完整或解析失败时使用
+ *
+ * 每个字段都有合理的默认值，确保即使 AI 调用完全失败，
+ * 后续的简历生成仍然可以继续（降级为基于原始简历 + JD 直接优化）。
+ * 这是「降级优雅」原则在数据层的体现。
+ */
 const DEFAULT_BASIS: OptimizationBasis = {
   fitSummary: '暂未生成优化依据，可直接根据原始简历与岗位信息生成定制简历。',
   fitScore: 0,
@@ -20,6 +38,16 @@ const DEFAULT_BASIS: OptimizationBasis = {
   riskNotes: [],
 }
 
+/**
+ * 简历分析 Prompt
+ *
+ * 设计要点：
+ *   1. RAG 上下文注入 —— {ragContext} 携带语义匹配到的简历片段
+ *   2. 明确的 JSON Schema —— 减少 LLM 输出格式偏差
+ *   3. 可执行性约束 —— 要求"具体、可执行"，防止空泛建议
+ *   4. 反幻觉约束 —— "不要编造原始简历中没有的信息"
+ *   5. 温度 0.4 —— 分析任务需要确定性，低温度减少随机性
+ */
 const RESUME_ANALYSIS_PROMPT = `你是一位资深简历优化顾问。请对原始简历和目标岗位做匹配分析，输出用于后续简历定制的结构化优化依据。
 
 ## 输入信息
@@ -63,7 +91,16 @@ const RESUME_ANALYSIS_PROMPT = `你是一位资深简历优化顾问。请对原
   "riskNotes": ["风险提示1", "风险提示2"]
 }`
 
-// 内置Workflow Prompt模板
+/**
+ * 简历生成 Prompt
+ *
+ * 设计要点：
+ *   1. 严格的格式模板 —— 保证输出简历结构统一
+ *   2. 禁止项明确 —— table/code fence/emoji/方括号 等会破坏排版
+ *   3. 优化规则优先级 —— 有优化依据时遵循，没有则直接优化
+ *   4. 反幻觉约束 —— "禁止编造量化指标、公司、项目、学历等"
+ *   5. 温度 0.7 —— 生成任务需要一定的表达灵活性
+ */
 const RESUME_GENERATION_PROMPT = `你是一位专业的简历优化专家。请严格按照以下格式重新定制简历，**不要**参考原始简历的格式。
 
 ## 输入信息
@@ -166,7 +203,7 @@ YYYY.MM - YYYY.MM
 4. 语言专业精炼
 5. 如果提供了简历优化依据，必须优先遵循其中的匹配优势、缺少能力、关键词策略、修改策略和风险提示
 6. 如果没有提供简历优化依据，则直接根据原始简历、目标公司和岗位描述完成优化
-7. 不新增虚假公司、项目、学历、证书、个人信息、量化成果；对缺少技能只能谨慎表达为“了解”“学习中”“相关接触”，不能写成精通
+7. 不新增虚假公司、项目、学历、证书、个人信息、量化成果；对缺少技能只能谨慎表达为"了解""学习中""相关接触"，不能写成精通
 8. 如果提供了 RAG 匹配证据，必须把最相关片段作为内容取舍依据，不得补写证据和原始简历中不存在的事实
 
 请直接输出纯Markdown格式的简历内容，不要使用代码块，直接输出内容即可，不要包含任何解释性文字。`
@@ -179,7 +216,12 @@ function formatOptimizationBasis(basis?: OptimizationBasis): string {
   return JSON.stringify(basis, null, 2)
 }
 
-// 替换模板变量
+/**
+ * 模板变量替换
+ *
+ * 将 analyze/generate request 的字段填入 Prompt 模板的 {placeholder} 中。
+ * RAG 上下文通过 formatRagContext() 格式化为 Markdown 后注入。
+ */
 function fillTemplate(template: string, data: AnalyzeRequest | GenerateRequest): string {
   return template
     .replace('{resumeContent}', data.resumeContent)
@@ -194,6 +236,16 @@ function fillTemplate(template: string, data: AnalyzeRequest | GenerateRequest):
     )
 }
 
+/**
+ * 通用 OpenAI 兼容 Chat Completion 调用
+ *
+ * 不依赖任何 SDK，直接用 fetch 调 REST API。
+ * 兼容所有实现了 /chat/completions 端点的服务（DeepSeek / 阿里云百炼 / 自定义）。
+ *
+ * @param prompt      完整的 system-less prompt（作为 user message 发送）
+ * @param temperature 温度参数：分析 0.4，生成 0.7
+ * @returns           { success, content, error } 的通用响应格式
+ */
 async function callChatCompletion(prompt: string, temperature = 0.7): Promise<GenerateResponse> {
   const config = await db.aiConfig.get()
 
@@ -221,7 +273,7 @@ async function callChatCompletion(prompt: string, temperature = 0.7): Promise<Ge
           },
         ],
         temperature,
-        stream: false,
+        stream: false, // 非流式，简化处理
       }),
     })
 
@@ -258,6 +310,13 @@ async function callChatCompletion(prompt: string, temperature = 0.7): Promise<Ge
   }
 }
 
+/**
+ * 清理 LLM 输出的 JSON
+ *
+ * LLM 经常在 JSON 外面包裹 ```json ... ``` 代码围栏，甚至只写 ```。
+ * 此函数剥离所有可能的围栏标记，只保留纯 JSON 字符串。
+ * 这是防御性解析的第一层。
+ */
 function cleanJsonContent(content: string): string {
   return content
     .replace(/^```json\s*/i, '')
@@ -266,6 +325,12 @@ function cleanJsonContent(content: string): string {
     .trim()
 }
 
+/**
+ * 数组字段类型安全过滤
+ *
+ * 即使 LLM 声称返回的是数组，实际可能是字符串、null 或其他类型。
+ * 此函数逐元素检查类型，确保调用方拿到的必定是 string[]。
+ */
 function normalizeStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value
@@ -274,6 +339,17 @@ function normalizeStringList(value: unknown): string[] {
     .filter(Boolean)
 }
 
+/**
+ * 优化依据规范化 —— 防御性解析的核心
+ *
+ * 设计原则：每个字段都有"保险"默认值。
+ *   - fitSummary 为空 → 给出合理的降级文本
+ *   - fitScore 非法 → 回退为 0
+ *   - 数组字段类型不对 → 回退为空数组 []
+ *
+ * 这保证了即使 LLM 输出完全不可解析，
+ * 后续的简历生成流程也不会因为 TypeError 而崩溃。
+ */
 function normalizeOptimizationBasis(value: unknown): OptimizationBasis {
   const data = value && typeof value === 'object' ? value as Record<string, unknown> : {}
   const fitScore = Number(data.fitScore)
@@ -293,12 +369,32 @@ function normalizeOptimizationBasis(value: unknown): OptimizationBasis {
   return basis
 }
 
+/**
+ * JSON 解析 → 清理 → 规范化 的完整链路
+ *
+ * 三层防御：
+ *   1. cleanJsonContent —— 剥离代码围栏
+ *   2. JSON.parse —— 解析为 JS 对象
+ *   3. normalizeOptimizationBasis —— 类型校验 + 默认值
+ *
+ * 任何一层失败都会抛出异常，由上层 analyzeResumeOptimizationBasis 统一捕获。
+ */
 function parseOptimizationBasis(content: string): OptimizationBasis {
   const parsed = JSON.parse(cleanJsonContent(content))
   return normalizeOptimizationBasis(parsed)
 }
 
-// 调用AI分析简历优化依据
+/**
+ * 分析简历优化依据 —— Customize 工作流的 Step 1
+ *
+ * 完整流程：
+ *   1. 拼接 Prompt（注入 RAG 上下文 + 简历 + JD + 公司信息）
+ *   2. 调用 LLM（温度 0.4，要求结构化 JSON 输出）
+ *   3. 防御性解析 LLM 输出
+ *   4. 将 RAG 结果附加到 OptimizationBasis.rag（供前端展示 RAG 证据）
+ *
+ * 此函数在 Customize.vue 的「开始分析」按钮点击时调用。
+ */
 export async function analyzeResumeOptimizationBasis(
   request: AnalyzeRequest,
 ): Promise<AnalyzeResponse> {
@@ -315,7 +411,7 @@ export async function analyzeResumeOptimizationBasis(
 
   try {
     const data = parseOptimizationBasis(result.content)
-    data.rag = request.rag
+    data.rag = request.rag // 附加 RAG 结果到优化依据
     return {
       success: true,
       data,
@@ -330,13 +426,25 @@ export async function analyzeResumeOptimizationBasis(
   }
 }
 
-// 调用AI生成简历
+/**
+ * 生成定向简历 —— Customize 工作流的 Step 2
+ *
+ * 与 analyze 不同，这里不解析 JSON，而是直接返回 Markdown 文本。
+ * 温度 0.7 提供适度的表达灵活性，让简历文案更自然。
+ *
+ * 此函数在 Customize.vue 的「生成新简历」按钮点击时调用。
+ */
 export async function generateResume(request: GenerateRequest): Promise<GenerateResponse> {
   const prompt = fillTemplate(RESUME_GENERATION_PROMPT, request)
   return callChatCompletion(prompt, 0.7)
 }
 
-// 测试AI连接
+/**
+ * 测试 AI 连接
+ *
+ * 发送一个最小 token 的请求，只判断 HTTP 状态码。
+ * 不检查返回内容，只验证 API Key 和端点是否可达。
+ */
 export async function testAIConnection(config: AIConfig): Promise<boolean> {
   try {
     const response = await fetch(`${config.baseUrl}/chat/completions`, {

@@ -20,3 +20,5 @@ tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
 sha2 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
+printpdf = "0.9.1"
+pulldown-cmark = "0.13.4"

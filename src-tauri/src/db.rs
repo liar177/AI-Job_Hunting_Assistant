@@ -1,3 +1,22 @@
+// SQLite 数据库层
+//
+// 设计要点：
+//   1. Mutex<Connection> —— rusqlite::Connection 不是 Sync 的，
+//      用 Mutex 保证多线程安全。Tauri 可能在多个 async 任务中并发访问。
+//   2. 向量存储 —— embedding 以 BLOB 形式存储（f32 小端字节 → Vec<u8>），
+//      而非 JSON 序列化，节省空间且读取更快。
+//   3. AI 配置用 ON CONFLICT DO UPDATE（UPSERT）—— 只保留一行（id='default'），
+//      不需要判断新增还是更新。
+//   4. replace_rag_chunks 用事务包裹（DELETE + INSERT in transaction），
+//      保证索引替换的原子性。
+//   5. 删除简历时级联删除 RAG chunks（DELETE FROM rag_chunks WHERE resume_id=?）
+//
+// 四个表：
+//   resumes       —— 简历
+//   applications  —— 投递记录
+//   ai_config     —— AI 配置（单行，id='default'）
+//   rag_chunks    —— RAG 分块 + 嵌入向量
+
 use crate::models::{
     AiConfig, AiConfigUpdate, Application, ApplicationInput, ApplicationUpdate, RagChunk, Resume,
     ResumeInput, ResumeUpdate,
@@ -6,7 +25,6 @@ use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::Mutex;
-use uuid::Uuid;
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -20,6 +38,11 @@ fn new_id() -> String {
     Uuid::new_v4().to_string()
 }
 
+/// f32 向量序列化为字节数组（小端序）
+///
+/// 为什么不存 JSON？
+///   1024 维 × 4 字节 = 4KB/块，JSON 序列化会膨胀到 ~12KB（带逗号空格）。
+///   BLOB 直接存原始字节，查询后用 blob_to_floats 还原。
 fn floats_to_blob(values: &[f32]) -> Vec<u8> {
     values
         .iter()
@@ -27,6 +50,10 @@ fn floats_to_blob(values: &[f32]) -> Vec<u8> {
         .collect::<Vec<u8>>()
 }
 
+/// BLOB 反序列化为 f32 向量
+///
+/// chunks_exact(4) 处理 4 字节一组（f32），忽略不完整的尾部。
+/// 如果 BLOB 为 NULL（未配置 embedding），返回 None。
 fn blob_to_floats(blob: Option<Vec<u8>>) -> Option<Vec<f32>> {
     blob.map(|bytes| {
         bytes
@@ -37,6 +64,13 @@ fn blob_to_floats(blob: Option<Vec<u8>>) -> Option<Vec<f32>> {
 }
 
 impl Database {
+    /// 初始化数据库：创建目录 + 建表
+    ///
+    /// CREATE TABLE IF NOT EXISTS 保证幂等性 —— 每次启动都安全调用。
+    /// 索引建在 RAG 查询的高频过滤条件上：
+    ///   - resume_id（按简历查 chunks）
+    ///   - resume_id + resume_version（增量判断用）
+    ///   - resume_id + content_hash（判断内容是否变化）
     pub fn new(app_dir: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(app_dir).map_err(|err| err.to_string())?;
         let conn = Connection::open(app_dir.join("data.db")).map_err(|err| err.to_string())?;
@@ -135,6 +169,8 @@ impl Database {
         }
     }
 
+    // ===== 简历 CRUD =====
+
     pub fn get_resumes(&self) -> Result<Vec<Resume>, String> {
         let conn = self.conn.lock().map_err(|err| err.to_string())?;
         let mut stmt = conn.prepare(
@@ -161,6 +197,7 @@ impl Database {
             .map_err(|err| err.to_string())
     }
 
+    /// 按 ID 查询简历，使用 optional() 优雅处理不存在的情况
     pub fn get_resume(&self, id: &str) -> Result<Option<Resume>, String> {
         let conn = self.conn.lock().map_err(|err| err.to_string())?;
         conn.query_row(
@@ -179,7 +216,7 @@ impl Database {
                 })
             },
         )
-        .optional()
+        .optional() // 0行 → Ok(None)，1行 → Ok(Some(...))，>1行 → 错误
         .map_err(|err| err.to_string())
     }
 
@@ -213,6 +250,11 @@ impl Database {
         Ok(resume)
     }
 
+    /// 更新简历：先读出当前版本，合并字段，version + 1，写回
+    ///
+    /// 为什么不用 UPDATE ... SET version = version + 1 直接更新？
+    ///   因为要返回完整的更新后 Resume 对象给前端，
+    ///   直接 SQL 更新后还需要再查一次，不如先读-改-写。
     pub fn update_resume(&self, id: &str, data: ResumeUpdate) -> Result<Option<Resume>, String> {
         let current = match self.get_resume(id)? {
             Some(resume) => resume,
@@ -221,7 +263,7 @@ impl Database {
         let updated = Resume {
             title: data.title.unwrap_or(current.title),
             content: data.content.unwrap_or(current.content),
-            version: current.version + 1,
+            version: current.version + 1, // 版本号递增，触发 RAG 重索引
             updated_at: now(),
             ..current
         };
@@ -234,6 +276,7 @@ impl Database {
         Ok(Some(updated))
     }
 
+    /// 删除简历时同时删除关联的 RAG chunks
     pub fn delete_resume(&self, id: &str) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|err| err.to_string())?;
         conn.execute("DELETE FROM resumes WHERE id = ?1", params![id])
@@ -242,6 +285,8 @@ impl Database {
             .map_err(|err| err.to_string())?;
         Ok(())
     }
+
+    // ===== 投递记录 CRUD =====
 
     pub fn get_applications(&self) -> Result<Vec<Application>, String> {
         let conn = self.conn.lock().map_err(|err| err.to_string())?;
@@ -302,7 +347,7 @@ impl Database {
             job_description: data.job_description,
             company_info: data.company_info,
             resume_id: data.resume_id,
-            status: "applied".to_string(),
+            status: "applied".to_string(), // 初始状态：已投递
             notes: data.notes.unwrap_or_default(),
             applied_at: now(),
             updated_at: now(),
@@ -376,6 +421,9 @@ impl Database {
         Ok(())
     }
 
+    // ===== AI 配置 =====
+
+    /// 获取配置，不存在时返回默认配置（不会返回 Err）
     pub fn get_ai_config(&self) -> Result<AiConfig, String> {
         let conn = self.conn.lock().map_err(|err| err.to_string())?;
         let config = conn.query_row(
@@ -403,6 +451,8 @@ impl Database {
         Ok(config.unwrap_or_else(Self::default_config))
     }
 
+    /// 使用 INSERT ... ON CONFLICT DO UPDATE（UPSERT）
+    /// 只维护一行配置（id='default'），不需要判断增删
     pub fn save_ai_config(&self, data: AiConfigUpdate) -> Result<AiConfig, String> {
         let current = self.get_ai_config()?;
         let updated = AiConfig {
@@ -455,6 +505,13 @@ impl Database {
         Ok(updated)
     }
 
+    // ===== RAG 分块操作 =====
+
+    /// 替换某份简历的所有 RAG chunks
+    ///
+    /// 用事务包裹 DELETE + INSERT 保证原子性：
+    /// 如果中途失败，不会出现"删了旧的但没插入新的"的状态。
+    /// embedding 为 None 时 BLOB 字段存 NULL，检索时自动降级 BM25。
     pub fn replace_rag_chunks(&self, resume_id: &str, chunks: &[RagChunk]) -> Result<(), String> {
         let mut conn = self.conn.lock().map_err(|err| err.to_string())?;
         let tx = conn.transaction().map_err(|err| err.to_string())?;
@@ -490,6 +547,8 @@ impl Database {
         tx.commit().map_err(|err| err.to_string())
     }
 
+    /// 获取某份简历的所有 RAG chunks（按 chunk_index 排序）
+    /// BLOB → Vec<f32> 通过 blob_to_floats 反序列化
     pub fn get_rag_chunks(&self, resume_id: &str) -> Result<Vec<RagChunk>, String> {
         let conn = self.conn.lock().map_err(|err| err.to_string())?;
         let mut stmt = conn.prepare(

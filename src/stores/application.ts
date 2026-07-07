@@ -1,3 +1,8 @@
+// 投递记录 Store
+//
+// 管理投递记录列表、当前记录、筛选状态和统计数据。
+// 使用 Vue computed 实现状态筛选和搜索过滤，数据量小时性能足够。
+
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Application, ApplicationInput, ApplicationStatus } from '@/types'
@@ -9,7 +14,12 @@ export const useApplicationStore = defineStore('application', () => {
   const filterStatus = ref<ApplicationStatus | 'all'>('all')
   const searchQuery = ref('')
 
-  // 过滤后的投递记录
+  /**
+   * 前端过滤：状态筛选 + 关键词搜索
+   *
+   * 数据量（投递记录数）通常较小，用 computed 做前端过滤足够高效，
+   * 不需要后端分页或数据库查询。
+   */
   const filteredApplications = computed(() => {
     let result = applications.value
     if (filterStatus.value !== 'all') {
@@ -26,7 +36,12 @@ export const useApplicationStore = defineStore('application', () => {
     return result
   })
 
-  // 统计数据
+  /**
+   * 统计数据：按状态分组计数
+   *
+   * interviewing 汇总了 technical + hr + boss 三种面试类型，
+   * 因为从用户角度看这些都是"面试中"。
+   */
   const stats = computed(() => {
     const total = applications.value.length
     const byStatus = (status: ApplicationStatus) =>
@@ -40,25 +55,21 @@ export const useApplicationStore = defineStore('application', () => {
     }
   })
 
-  // 加载所有投递记录
   async function loadApplications() {
     applications.value = await db.applications.getAll()
   }
 
-  // 加载单个投递记录
   async function loadApplication(id: string) {
     currentApplication.value = await db.applications.getById(id) || null
     return currentApplication.value
   }
 
-  // 创建投递记录
   async function createApplication(data: ApplicationInput) {
     const application = await db.applications.create(data)
     await loadApplications()
     return application
   }
 
-  // 更新投递记录
   async function updateApplication(id: string, data: Partial<Application>) {
     const application = await db.applications.update(id, data)
     if (application) {
@@ -70,12 +81,11 @@ export const useApplicationStore = defineStore('application', () => {
     return application
   }
 
-  // 更新状态
+  /** 便捷方法：只更新投递状态 */
   async function updateStatus(id: string, status: ApplicationStatus) {
     return updateApplication(id, { status })
   }
 
-  // 删除投递记录
   async function deleteApplication(id: string) {
     await db.applications.delete(id)
     await loadApplications()

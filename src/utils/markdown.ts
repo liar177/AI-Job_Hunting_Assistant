@@ -1,3 +1,19 @@
+// 文档处理模块 —— AI 应用的数据入口
+//
+// 此文件承载了所有非结构化数据到 Markdown 的转换逻辑，
+// 是整个 AI 链路「垃圾进垃圾出」的第一道防线。
+//
+// 核心功能：
+//   1. Markdown 渲染（marked + highlight.js 代码高亮）
+//   2. 多格式文档导入（DOCX / 旧版 DOC / PDF / MD / TXT）
+//   3. 文件导出（Markdown / TXT / PDF）
+//   4. 旧版 DOC 二进制解析（多编码试探 + 噪音评分过滤）
+//   5. PDF 文本提取 + 视觉布局 → Markdown 结构推断
+//
+// 最复杂的两个函数：
+//   readLegacyDocFile()  —— 旧版 .doc 二进制解析，~200 行
+//   readPdfFile()         —— PDF 文本提取 + 布局重建，~100 行
+
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
@@ -46,6 +62,12 @@ export function renderMarkdown(content: string): string {
   return marked.parse(content) as string
 }
 
+/**
+ * 清理从旧版 DOC 导入后残留的样式噪音行
+ *
+ * 旧版 DOC 解析后可能残留 Word 样式名称（如"标题"、"Normal"等）作为独立行，
+ * 这些行对简历内容毫无意义，需要在渲染前过滤掉。
+ */
 export function cleanLegacyDocStyleNoiseFromMarkdown(content: string): string {
   return normalizeMarkdown(
     content
@@ -275,12 +297,29 @@ async function readDocxFile(file: File): Promise<string> {
   return normalizeMarkdown(result.value)
 }
 
+/**
+ * 旧版 .doc 二进制文件解析
+ *
+ * .doc 是 Microsoft Word 97-2003 的二进制 OLE 格式，完全不同于 .docx（ZIP+XML）。
+ * 在浏览器端无法使用完整的 OLE 解析器，因此采用「最佳努力文本恢复」策略：
+ *
+ * 策略：
+ *   1. 优先尝试 UTF-16LE 解码（Word 内部存储编码）
+ *   2. 备用尝试 GB18030（中文系统常用）+ UTF-8
+ *   3. 每种解码结果提取可读内容块
+ *   4. 通过噪音评分选择最佳候选（scoreLegacyDocCandidate）
+ *   5. 将提取的文本结构化 Markdown（推断标题、列表等）
+ *
+ * 噪音评分的核心思路：
+ *   不依赖编码检测的猜测正确率，而是对每种解码结果计算「质量分数」。
+ *   分值计算考虑：中文字符数（正）、英文数（正）、乱码字符 � 数（负）、
+ *   XML/ZIP 元数据噪音（负）、可读行数（正）。
+ *   选择分值最高的解码结果。
+ */
 async function readLegacyDocFile(file: File): Promise<string> {
   const buffer = await file.arrayBuffer()
   const bytes = new Uint8Array(buffer)
 
-  // Legacy .doc is a binary OLE document, unlike .docx. In the browser we do a
-  // best-effort text recovery from common encodings, then structure it as Markdown.
   const utf16Text = extractLegacyDocContentBlocks(decodeBytes(bytes, 'utf-16le'))
   const fallbackTexts = [decodeBytes(bytes, 'gb18030'), decodeBytes(bytes, 'utf-8')].map(extractLegacyDocContentBlocks)
   const bestText = hasUsefulLegacyDocContent(utf16Text)
@@ -290,6 +329,27 @@ async function readLegacyDocFile(file: File): Promise<string> {
   return legacyDocTextToMarkdown(bestText)
 }
 
+/**
+ * PDF 文件解析
+ *
+ * PDF 是最复杂的导入格式，因为 PDF 只存储「在坐标 (x,y) 处绘制文字」的指令，
+ * 完全不保留段落、标题、列表等语义结构。
+ *
+ * 解析流程：
+ *   1. pdfjs-dist 逐页提取文本碎片（每个碎片有 x/y/fontSize/fontName）
+ *   2. buildPdfLines() —— 视觉行重建：
+ *      同一页内，Y 坐标接近的碎片合并为同一行；
+ *      X 坐标的间距决定是同行拼接还是分列
+ *   3. sortPdfLinesForReading() —— 双栏检测与排序：
+ *      如果左右两栏都有 ≥4 行且占比 >22%，按左栏→右栏排序
+ *   4. convertPdfLinesToMarkdown() —— 结构推断：
+ *      - 大字号/加粗 + 短文本 → 推断为标题（h1/h2/h3）
+ *      - 以 •/数字/字母 开头 → 推断为列表项
+ *      - Y 间距 > 1.9 倍行高 → 段落分隔
+ *      - 已知简历关键词（个人/求职/教育/工作...）→ 强推断为标题
+ *
+ * 注意：所有推断都是启发式的，对非标准排版的 PDF 可能效果不佳。
+ */
 async function readPdfFile(file: File): Promise<string> {
   const pdfjs = await import('pdfjs-dist')
   const pdfWorkerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default
@@ -305,8 +365,6 @@ async function readPdfFile(file: File): Promise<string> {
     const page = await pdf.getPage(pageNumber)
     const textContent = await page.getTextContent()
 
-    // PDF exposes positioned text fragments, not headings or paragraphs.
-    // First rebuild visual lines; later steps infer Markdown from geometry.
     lines.push(...buildPdfLines(textContent.items as PdfTextItem[], pageNumber))
   }
 
