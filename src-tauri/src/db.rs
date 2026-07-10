@@ -347,7 +347,7 @@ impl Database {
             job_description: data.job_description,
             company_info: data.company_info,
             resume_id: data.resume_id,
-            status: "applied".to_string(), // 初始状态：已投递
+            status: data.status.unwrap_or_else(|| "applied".to_string()),
             notes: data.notes.unwrap_or_default(),
             applied_at: now(),
             updated_at: now(),

@@ -71,6 +71,7 @@ pub struct ApplicationInput {
     pub job_description: String,
     pub company_info: String,
     pub resume_id: String,
+    pub status: Option<String>,
     pub notes: Option<String>,
 }
 

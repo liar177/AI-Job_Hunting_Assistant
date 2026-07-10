@@ -56,6 +56,7 @@ const form = ref({
   jobDescription: '',
   companyInfo: '',
   resumeId: '',
+  status: 'applied' as ApplicationStatus,
   notes: '',
 })
 
@@ -100,6 +101,7 @@ onMounted(() => {
       jobDescription: '',
       companyInfo: '',
       resumeId: resumeId || '',
+      status: 'applied',
       notes: '',
     }
     showModal.value = true
@@ -109,7 +111,7 @@ onMounted(() => {
 function openModal() {
   form.value = {
     companyName: '', jobTitle: '', jobDescription: '',
-    companyInfo: '', resumeId: '', notes: '',
+    companyInfo: '', resumeId: '', status: 'applied', notes: '',
   }
   showModal.value = true
 }
@@ -126,6 +128,7 @@ async function submitCreate() {
     jobDescription: form.value.jobDescription,
     companyInfo: form.value.companyInfo,
     resumeId: form.value.resumeId,
+    status: form.value.status,
     notes: form.value.notes,
   })
   showModal.value = false
@@ -151,6 +154,12 @@ function getRowInterviewText(app: Application) {
 
 function getInterviewIcon(mode?: string) {
   return mode === 'offline' ? MapPin : Video
+}
+
+function getInterviewModeColor(mode?: string) {
+  if (mode === 'online') return 'bg-blue-50 text-blue-700 border-blue-100'
+  if (mode === 'offline') return 'bg-orange-50 text-orange-700 border-orange-100'
+  return 'bg-gray-50 text-gray-600 border-gray-100'
 }
 
 function handleDelete(id: string, companyName: string, jobTitle: string, event: Event) {
@@ -279,7 +288,7 @@ function handleDelete(id: string, companyName: string, jobTitle: string, event: 
           >
             <div class="flex items-center justify-between gap-2 mb-2">
               <span class="text-xs font-medium text-primary">{{ formatInterviewDayLabel(item.schedule.interviewAt) }}</span>
-              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
+              <span :class="['inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border', getInterviewModeColor(item.schedule.mode)]">
                 {{ getInterviewModeLabel(item.schedule.mode) }}
               </span>
             </div>
@@ -422,7 +431,7 @@ function handleDelete(id: string, companyName: string, jobTitle: string, event: 
                     <span :class="['inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border flex-shrink-0', getStatusOption(item.stage).color]">
                       {{ getInterviewStageLabel(item.stage) }}
                     </span>
-                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-50 text-gray-600 border border-gray-100">
+                    <span :class="['inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border', getInterviewModeColor(item.schedule.mode)]">
                       {{ getInterviewModeLabel(item.schedule.mode) }}
                     </span>
                   </div>
@@ -558,6 +567,15 @@ function handleDelete(id: string, companyName: string, jobTitle: string, event: 
               <option v-for="r in resumeStore.resumes" :key="r.id" :value="r.id">{{ r.title }}</option>
             </select>
             <p v-if="resumeStore.resumes.length === 0" class="text-xs text-amber-600 mt-1">还没有简历，请先去简历管理创建</p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">面试状态 *</label>
+            <select
+              v-model="form.status"
+              class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            >
+              <option v-for="opt in STATUS_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">岗位描述</label>

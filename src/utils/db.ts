@@ -142,13 +142,14 @@ export const applicationDb = {
     return readData<Application>(STORAGE_KEYS.APPLICATIONS).find((a) => a.id === id)
   },
 
-  /** 创建投递记录，初始状态为 'applied' */
+  /** 创建投递记录，默认状态为 'applied'，可通过 data.status 指定 */
   create(data: {
     companyName: string
     jobTitle: string
     jobDescription: string
     companyInfo: string
     resumeId: string
+    status?: string
     notes?: string
   }): Application {
     const applications = readData<Application>(STORAGE_KEYS.APPLICATIONS)
@@ -159,7 +160,7 @@ export const applicationDb = {
       jobDescription: data.jobDescription,
       companyInfo: data.companyInfo,
       resumeId: data.resumeId,
-      status: 'applied',
+      status: (data.status as Application['status']) || 'applied',
       notes: data.notes || '',
       appliedAt: now(),
       updatedAt: now(),
