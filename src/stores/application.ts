@@ -57,7 +57,7 @@ export const useApplicationStore = defineStore('application', () => {
       total,
       applied: byStatus('applied'),
       interviewing: byStatus('technical') + byStatus('hr') + byStatus('boss'),
-      upcomingInterviews: getUpcomingInterviewItems(applications.value, 99).length,
+      upcomingInterviews: getUpcomingInterviewItems(applications.value).length,
       todayInterviews: allInterviews.filter(
         (item) => new Date(item.schedule.interviewAt).toLocaleDateString('zh-CN') === todayKey
       ).length,
@@ -68,7 +68,7 @@ export const useApplicationStore = defineStore('application', () => {
   })
 
   const interviewItems = computed(() => collectInterviewItems(applications.value))
-  const upcomingInterviewItems = computed(() => getUpcomingInterviewItems(applications.value, 4))
+  const upcomingInterviewItems = computed(() => getUpcomingInterviewItems(applications.value))
   const missingInterviewApplications = computed(() => applications.value.filter(needsInterviewInfo))
 
   async function loadApplications() {
