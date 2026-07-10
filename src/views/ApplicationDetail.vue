@@ -5,11 +5,35 @@ import { useApplicationStore } from '@/stores/application'
 import { useResumeStore } from '@/stores/resume'
 import { STATUS_OPTIONS, getStatusOption, formatDate } from '@/utils/constants'
 import { renderMarkdown } from '@/utils/markdown'
-import { ElMessageBox, ElMessage } from 'element-plus'
-import type { ApplicationStatus, Resume } from '@/types'
 import {
-  ArrowLeft, Briefcase, Calendar, Building, FileText,
-  Trash2, Save, Pencil, ChevronDown,
+  downloadInterviewIcs,
+  formatInterviewDateTime,
+  fromDateTimeLocalValue,
+  getCurrentInterview,
+  getInterviewModeLabel,
+  getInterviewStageLabel,
+  hasCompleteInterview,
+  INTERVIEW_MODE_OPTIONS,
+  isInterviewStage,
+  toDateTimeLocalValue,
+} from '@/utils/interview'
+import { ElMessageBox, ElMessage } from 'element-plus'
+import type { ApplicationStatus, InterviewMode, InterviewStage, Resume } from '@/types'
+import {
+  ArrowLeft,
+  Briefcase,
+  Calendar,
+  Building,
+  FileText,
+  Trash2,
+  Save,
+  Pencil,
+  ChevronDown,
+  Clock,
+  MapPin,
+  Video,
+  Bell,
+  User,
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -20,18 +44,41 @@ const resumeStore = useResumeStore()
 const notesEditing = ref(false)
 const notesInput = ref('')
 const statusDropdownOpen = ref(false)
+const interviewEditing = ref(false)
+const interviewForm = ref({
+  interviewAt: '',
+  mode: 'online' as InterviewMode,
+  location: '',
+  interviewer: '',
+})
 
 const app = computed(() => store.currentApplication)
+const activeStage = computed<InterviewStage | null>(() =>
+  app.value && isInterviewStage(app.value.status) ? app.value.status : null
+)
+const activeInterview = computed(() => (app.value ? getCurrentInterview(app.value) : undefined))
 const renderedJobDesc = computed(() => (app.value ? renderMarkdown(app.value.jobDescription || '') : ''))
 const relatedResume = computed<Resume | undefined>(() =>
   app.value ? resumeStore.resumes.find((r) => r.id === app.value!.resumeId) : undefined
 )
 
+function syncInterviewForm() {
+  const schedule = activeInterview.value
+  interviewForm.value = {
+    interviewAt: toDateTimeLocalValue(schedule?.interviewAt),
+    mode: schedule?.mode || 'online',
+    location: schedule?.location || '',
+    interviewer: schedule?.interviewer || '',
+  }
+}
+
 async function loadApplicationData(id: string) {
   const loaded = await store.loadApplication(id)
   if (!loaded) {
     router.push('/applications')
+    return
   }
+  syncInterviewForm()
 }
 
 onMounted(() => {
@@ -43,6 +90,10 @@ watch(() => route.params.id, (newId) => {
   if (newId) loadApplicationData(newId as string)
 })
 
+watch(() => app.value?.status, () => {
+  syncInterviewForm()
+})
+
 function goBack() {
   router.push('/applications')
 }
@@ -51,6 +102,10 @@ async function selectStatus(status: ApplicationStatus) {
   if (!app.value) return
   await store.updateStatus(app.value.id, status)
   statusDropdownOpen.value = false
+  if (isInterviewStage(status)) {
+    interviewEditing.value = !hasCompleteInterview(getCurrentInterview(store.currentApplication!))
+    syncInterviewForm()
+  }
 }
 
 function startEditNotes() {
@@ -66,6 +121,43 @@ async function saveNotes() {
 
 function cancelEditNotes() {
   notesEditing.value = false
+}
+
+function startEditInterview() {
+  syncInterviewForm()
+  interviewEditing.value = true
+}
+
+function cancelEditInterview() {
+  syncInterviewForm()
+  interviewEditing.value = false
+}
+
+async function saveInterview() {
+  if (!app.value || !activeStage.value) return
+  if (!interviewForm.value.interviewAt || !interviewForm.value.location.trim()) {
+    ElMessage.warning('请填写面试时间和地点/会议软件')
+    return
+  }
+
+  const schedule = {
+    interviewAt: fromDateTimeLocalValue(interviewForm.value.interviewAt),
+    mode: interviewForm.value.mode,
+    location: interviewForm.value.location.trim(),
+    interviewer: interviewForm.value.interviewer.trim() || undefined,
+    calendarReminderStatus: 'created' as const,
+    updatedAt: new Date().toISOString(),
+  }
+  const updatedInterviews = {
+    ...(app.value.interviews || {}),
+    [activeStage.value]: schedule,
+  }
+  const updated = await store.updateApplication(app.value.id, { interviews: updatedInterviews })
+  if (updated) {
+    downloadInterviewIcs(updated, activeStage.value, schedule)
+    interviewEditing.value = false
+    ElMessage.success('面试安排已保存，日历提醒文件已生成')
+  }
 }
 
 function viewResume(id: string) {
@@ -92,7 +184,6 @@ function handleDelete() {
 
 <template>
   <div v-if="app" class="h-full flex flex-col bg-gray-50">
-    <!-- 顶部栏 -->
     <header class="flex items-center gap-4 px-8 py-4 bg-white border-b border-gray-100">
       <button
         @click="goBack"
@@ -111,7 +202,6 @@ function handleDelete() {
           <p class="text-sm text-gray-500 truncate">{{ app.jobTitle }}</p>
         </div>
       </div>
-      <!-- 状态下拉 -->
       <div class="relative">
         <button
           @click="statusDropdownOpen = !statusDropdownOpen"
@@ -143,9 +233,128 @@ function handleDelete() {
     </header>
 
     <main class="flex-1 overflow-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <!-- 左侧主信息 -->
       <div class="lg:col-span-2 space-y-4">
-        <!-- 岗位描述 -->
+        <section class="bg-white rounded-xl border border-gray-100 p-5">
+          <div class="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <div class="flex items-center gap-2 text-sm font-medium text-gray-700">
+                <Calendar class="w-4 h-4 text-primary" />面试安排
+              </div>
+              <p class="text-xs text-gray-400 mt-1">技术面、HR 面、Boss 面会分别保存对应安排</p>
+            </div>
+            <button
+              v-if="activeStage && !interviewEditing"
+              @click="startEditInterview"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-50 transition-colors"
+            >
+              <Pencil class="w-3.5 h-3.5" />
+              {{ activeInterview ? '修改安排' : '填写安排' }}
+            </button>
+          </div>
+
+          <div v-if="!activeStage" class="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-500">
+            当前状态不是面试阶段。切换到技术面、HR 面或 Boss 面后即可填写面试时间、形式、地点和面试官。
+          </div>
+
+          <template v-else-if="interviewEditing">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">
+                  {{ getInterviewStageLabel(activeStage) }}时间 *
+                </label>
+                <input
+                  v-model="interviewForm.interviewAt"
+                  type="datetime-local"
+                  class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">线上或线下 *</label>
+                <select
+                  v-model="interviewForm.mode"
+                  class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                >
+                  <option v-for="opt in INTERVIEW_MODE_OPTIONS" :key="opt.value" :value="opt.value">
+                    {{ opt.label }}
+                  </option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">
+                  {{ interviewForm.mode === 'online' ? '会议软件/链接 *' : '面试地点 *' }}
+                </label>
+                <input
+                  v-model="interviewForm.location"
+                  type="text"
+                  :placeholder="interviewForm.mode === 'online' ? '例如：腾讯会议 / 飞书会议' : '例如：北京望京 SOHO A 座'"
+                  class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">面试官</label>
+                <input
+                  v-model="interviewForm.interviewer"
+                  type="text"
+                  placeholder="例如：李工 / 王 HR"
+                  class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                />
+              </div>
+            </div>
+            <div class="mt-4 rounded-lg bg-primary-50 border border-primary-100 px-3 py-2 text-xs text-primary">
+              保存后会生成日历提醒文件，内含提前 1 天和提前 3 小时两次提醒。
+            </div>
+            <div class="flex items-center justify-end gap-2 mt-4">
+              <button
+                @click="cancelEditInterview"
+                class="px-3 py-1.5 rounded-md border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-50 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                @click="saveInterview"
+                class="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-accent text-white text-xs font-medium hover:bg-accent-dark transition-colors"
+              >
+                <Save class="w-3.5 h-3.5" />保存安排
+              </button>
+            </div>
+          </template>
+
+          <div v-else-if="activeInterview" class="rounded-lg border border-primary-100 bg-primary-50/60 p-4">
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+              <span :class="['inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border', getStatusOption(activeStage).color]">
+                {{ getInterviewStageLabel(activeStage) }}
+              </span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-white text-primary border border-primary-100">
+                {{ getInterviewModeLabel(activeInterview.mode) }}
+              </span>
+              <span
+                v-if="activeInterview.calendarReminderStatus === 'created'"
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100"
+              >
+                <Bell class="w-3 h-3" />已加提醒
+              </span>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              <div class="flex items-center gap-2 text-gray-700">
+                <Clock class="w-4 h-4 text-primary" />
+                {{ formatInterviewDateTime(activeInterview.interviewAt) }}
+              </div>
+              <div class="flex items-center gap-2 text-gray-700">
+                <component :is="activeInterview.mode === 'online' ? Video : MapPin" class="w-4 h-4 text-primary" />
+                {{ activeInterview.location }}
+              </div>
+              <div class="flex items-center gap-2 text-gray-700">
+                <User class="w-4 h-4 text-primary" />
+                {{ activeInterview.interviewer || '面试官待定' }}
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="rounded-lg border border-amber-100 bg-amber-50 px-4 py-4 text-sm text-amber-700">
+            当前已进入{{ getInterviewStageLabel(activeStage) }}，还没有填写面试时间和地点。
+          </div>
+        </section>
+
         <section class="bg-white rounded-xl border border-gray-100 p-5">
           <div class="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
             <FileText class="w-4 h-4 text-primary" />岗位描述
@@ -158,7 +367,6 @@ function handleDelete() {
           <p v-else class="text-sm text-gray-400">暂无岗位描述</p>
         </section>
 
-        <!-- 公司信息 -->
         <section class="bg-white rounded-xl border border-gray-100 p-5">
           <div class="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
             <Building class="w-4 h-4 text-primary" />公司信息
@@ -167,7 +375,6 @@ function handleDelete() {
           <p v-else class="text-sm text-gray-400">暂无公司信息</p>
         </section>
 
-        <!-- 备注 -->
         <section class="bg-white rounded-xl border border-gray-100 p-5">
           <div class="flex items-center justify-between mb-3">
             <div class="flex items-center gap-2 text-sm font-medium text-gray-700">
@@ -209,9 +416,7 @@ function handleDelete() {
         </section>
       </div>
 
-      <!-- 右侧侧边栏 -->
       <aside class="space-y-4">
-        <!-- 关联简历 -->
         <section class="bg-white rounded-xl border border-gray-100 p-5">
           <div class="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
             <FileText class="w-4 h-4 text-primary" />关联简历
@@ -227,21 +432,20 @@ function handleDelete() {
           <p v-else class="text-sm text-gray-400">未关联简历</p>
         </section>
 
-        <!-- 元信息 -->
         <section class="bg-white rounded-xl border border-gray-100 p-5">
           <div class="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
             <Calendar class="w-4 h-4 text-primary" />投递信息
           </div>
           <ul class="space-y-2 text-sm">
-            <li class="flex justify-between">
+            <li class="flex justify-between gap-4">
               <span class="text-gray-500">投递时间</span>
               <span class="text-gray-700">{{ formatDate(app.appliedAt) }}</span>
             </li>
-            <li class="flex justify-between">
+            <li class="flex justify-between gap-4">
               <span class="text-gray-500">最后更新</span>
               <span class="text-gray-700">{{ formatDate(app.updatedAt) }}</span>
             </li>
-            <li class="flex justify-between">
+            <li class="flex justify-between gap-4">
               <span class="text-gray-500">当前状态</span>
               <span
                 :class="['inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border', getStatusOption(app.status).color]"
@@ -252,7 +456,22 @@ function handleDelete() {
           </ul>
         </section>
 
-        <!-- 危险操作 -->
+        <section v-if="activeStage" class="bg-white rounded-xl border border-gray-100 p-5">
+          <div class="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
+            <Bell class="w-4 h-4 text-primary" />默认提醒
+          </div>
+          <div class="space-y-2 text-sm">
+            <div class="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
+              <span class="text-gray-600">提前 1 天</span>
+              <span class="text-xs text-emerald-700">开启</span>
+            </div>
+            <div class="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
+              <span class="text-gray-600">提前 3 小时</span>
+              <span class="text-xs text-emerald-700">开启</span>
+            </div>
+          </div>
+        </section>
+
         <section class="bg-white rounded-xl border border-gray-100 p-5">
           <button
             @click="handleDelete"

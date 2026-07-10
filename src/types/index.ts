@@ -30,6 +30,23 @@ export type ApplicationStatus =
   | 'rejected'     // 已挂
   | 'accepted'     // 已接
 
+export type InterviewStage = Extract<ApplicationStatus, 'technical' | 'hr' | 'boss'>
+
+export type InterviewMode = 'online' | 'offline'
+
+export type CalendarReminderStatus = 'none' | 'created' | 'failed'
+
+export interface InterviewSchedule {
+  interviewAt: string
+  mode: InterviewMode
+  location: string
+  interviewer?: string
+  calendarReminderStatus?: CalendarReminderStatus
+  updatedAt: string
+}
+
+export type InterviewSchedules = Partial<Record<InterviewStage, InterviewSchedule>>
+
 // 投递记录类型
 export interface Application {
   id: string
@@ -39,6 +56,7 @@ export interface Application {
   companyInfo: string
   resumeId: string
   status: ApplicationStatus
+  interviews?: InterviewSchedules
   notes: string
   appliedAt: string
   updatedAt: string

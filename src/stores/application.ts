@@ -7,6 +7,11 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Application, ApplicationInput, ApplicationStatus } from '@/types'
 import { db } from '@/utils/db-adapter'
+import {
+  collectInterviewItems,
+  getUpcomingInterviewItems,
+  needsInterviewInfo,
+} from '@/utils/interview'
 
 export const useApplicationStore = defineStore('application', () => {
   const applications = ref<Application[]>([])
@@ -46,14 +51,25 @@ export const useApplicationStore = defineStore('application', () => {
     const total = applications.value.length
     const byStatus = (status: ApplicationStatus) =>
       applications.value.filter((a) => a.status === status).length
+    const allInterviews = collectInterviewItems(applications.value)
+    const todayKey = new Date().toLocaleDateString('zh-CN')
     return {
       total,
       applied: byStatus('applied'),
       interviewing: byStatus('technical') + byStatus('hr') + byStatus('boss'),
+      upcomingInterviews: getUpcomingInterviewItems(applications.value, 99).length,
+      todayInterviews: allInterviews.filter(
+        (item) => new Date(item.schedule.interviewAt).toLocaleDateString('zh-CN') === todayKey
+      ).length,
+      missingInterviewInfo: applications.value.filter(needsInterviewInfo).length,
       offer: byStatus('offer'),
       rejected: byStatus('rejected'),
     }
   })
+
+  const interviewItems = computed(() => collectInterviewItems(applications.value))
+  const upcomingInterviewItems = computed(() => getUpcomingInterviewItems(applications.value, 4))
+  const missingInterviewApplications = computed(() => applications.value.filter(needsInterviewInfo))
 
   async function loadApplications() {
     applications.value = await db.applications.getAll()
@@ -101,6 +117,9 @@ export const useApplicationStore = defineStore('application', () => {
     searchQuery,
     filteredApplications,
     stats,
+    interviewItems,
+    upcomingInterviewItems,
+    missingInterviewApplications,
     loadApplications,
     loadApplication,
     createApplication,
