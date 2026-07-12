@@ -1,6 +1,6 @@
 [package]
 name = "ai-job-assistant"
-version = "0.1.0"
+version = "0.1.1"
 description = "AI 求职助手"
 authors = ["AI Job Assistant"]
 edition = "2021"
