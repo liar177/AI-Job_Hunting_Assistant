@@ -11,6 +11,8 @@ git push origin v0.2.0
 
 工作流使用仓库内置的 `GITHUB_TOKEN`，无需额外配置发布令牌。创建标签前，应确保标签版本与 `src-tauri/tauri.conf.json` 中的应用版本一致。
 
+如需自定义 Release 内容，可以等待自动发布完成后直接在 GitHub Releases 页面编辑。也可以取消标签自动触发的运行，随后在 GitHub 仓库的 **Actions → Build and publish release → Run workflow** 中填写已有的版本标签，自定义 Release 标题、正文，并可设置为预发布；标题或正文留空时会使用默认内容。手动构建始终检出所填标签对应的代码。
+
 > 一个本地优先的智能简历定制与投递管理工具。通过 AI 分析岗位 JD 并生成定向简历，全程数据存储在浏览器本地，安全私密、无需后端。
 
 ## 功能概览
