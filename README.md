@@ -2,9 +2,14 @@
 
 ## GitHub 自动发布
 
-推送提交到 `main` 分支后，GitHub Actions 会在 Windows runner 上构建 Tauri NSIS 安装包，并自动创建公开 Release。Release 标签格式为 `v<应用版本>-build.<运行号>`，例如 `v0.1.0-build.12`。
+创建并推送以 `v` 开头的版本标签后，GitHub Actions 会在 Windows runner 上构建 Tauri NSIS 安装包，并以该标签自动创建公开 Release，例如 `v0.2.0`。普通分支推送不会触发发布。
 
-也可以在 GitHub 仓库的 **Actions → Build and publish release → Run workflow** 手动触发。工作流使用仓库内置的 `GITHUB_TOKEN`，无需额外配置发布令牌。
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+工作流使用仓库内置的 `GITHUB_TOKEN`，无需额外配置发布令牌。创建标签前，应确保标签版本与 `src-tauri/tauri.conf.json` 中的应用版本一致。
 
 > 一个本地优先的智能简历定制与投递管理工具。通过 AI 分析岗位 JD 并生成定向简历，全程数据存储在浏览器本地，安全私密、无需后端。
 

@@ -2,9 +2,8 @@ name: Build and publish release
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
@@ -44,12 +43,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__-build.${{ github.run_number }}
-          releaseName: AI Job Hunting Assistant v__VERSION__ (build ${{ github.run_number }})
+          tagName: ${{ github.ref_name }}
+          releaseName: AI Job Hunting Assistant ${{ github.ref_name }}
           releaseBody: |
             Automated Windows build from commit ${{ github.sha }}.
 
             Download the `.exe` asset below to install the application.
           releaseDraft: false
           prerelease: false
-
