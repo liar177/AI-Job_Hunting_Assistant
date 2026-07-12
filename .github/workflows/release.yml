@@ -1,9 +1,6 @@
 name: Build and publish release
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       release_tag:
@@ -28,7 +25,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ inputs.release_tag || github.ref }}
+  group: release-${{ inputs.release_tag }}
   cancel-in-progress: false
 
 jobs:
@@ -40,7 +37,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_tag || github.ref }}
+          ref: ${{ inputs.release_tag }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -63,15 +60,13 @@ jobs:
         id: release
         shell: pwsh
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
           COMMIT_SHA: ${{ github.sha }}
           INPUT_TAG: ${{ inputs.release_tag }}
           INPUT_NAME: ${{ inputs.release_name }}
           INPUT_BODY: ${{ inputs.release_body }}
           INPUT_PRERELEASE: ${{ inputs.prerelease }}
         run: |
-          $tag = if ($env:EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_TAG.Trim() } else { $env:REF_NAME }
+          $tag = $env:INPUT_TAG.Trim()
           if (-not $tag.StartsWith('v')) {
             throw "Release tag must start with 'v'. Received: $tag"
           }
@@ -88,7 +83,7 @@ jobs:
 
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "name=$name" >> $env:GITHUB_OUTPUT
-          $isPrerelease = $env:EVENT_NAME -eq 'workflow_dispatch' -and $env:INPUT_PRERELEASE -eq 'true'
+          $isPrerelease = $env:INPUT_PRERELEASE -eq 'true'
           "prerelease=$($isPrerelease.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           $delimiter = "RELEASE_BODY_$([guid]::NewGuid())"
           "body<<$delimiter" >> $env:GITHUB_OUTPUT

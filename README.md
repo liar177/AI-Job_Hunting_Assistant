@@ -2,16 +2,21 @@
 
 ## GitHub 自动发布
 
-创建并推送以 `v` 开头的版本标签后，GitHub Actions 会在 Windows runner 上构建 Tauri NSIS 安装包，并以该标签自动创建公开 Release，例如 `v0.2.0`。普通分支推送不会触发发布。
+发布采用显式确认流程。创建并推送版本标签后不会立即构建；运行交互式发布命令、确认发布数据后，才会通过 GitHub CLI 触发 Windows runner 构建 Tauri NSIS 安装包并创建 Release。普通代码和标签推送都不会直接触发发布。
 
 ```bash
 git tag v0.2.0
 git push origin v0.2.0
+npm run release
 ```
 
-工作流使用仓库内置的 `GITHUB_TOKEN`，无需额外配置发布令牌。创建标签前，应确保标签版本与 `src-tauri/tauri.conf.json` 中的应用版本一致。
+命令会询问自动默认内容或手动内容、已有版本标签、Release 名称、发布说明和预发布状态，并在最终确认后调用 `gh workflow run`。也可用参数执行，例如：
 
-如需自定义 Release 内容，可以等待自动发布完成后直接在 GitHub Releases 页面编辑。也可以取消标签自动触发的运行，随后在 GitHub 仓库的 **Actions → Build and publish release → Run workflow** 中填写已有的版本标签，自定义 Release 标题、正文，并可设置为预发布；标题或正文留空时会使用默认内容。手动构建始终检出所填标签对应的代码。
+```powershell
+.\scripts\release.ps1 -Mode Manual -Tag v0.2.0 -ReleaseName "AI 求职助手 v0.2.0" -NotesFile .\RELEASE_NOTES.md -Yes -Watch
+```
+
+自动模式会使用默认标题和正文：`npm run release -- -Mode Auto -Tag v0.2.0`。工作流使用仓库内置的 `GITHUB_TOKEN`，手动构建始终检出所填标签对应的代码。创建标签前，应确保标签版本与 `src-tauri/tauri.conf.json` 中的应用版本一致。
 
 > 一个本地优先的智能简历定制与投递管理工具。通过 AI 分析岗位 JD 并生成定向简历，全程数据存储在浏览器本地，安全私密、无需后端。
 
