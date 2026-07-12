@@ -13,7 +13,11 @@ declare module 'vue' {
   export interface GlobalComponents {
     AppLayout: typeof import('./src/components/Layout/AppLayout.vue')['default']
     ElButton: typeof import('element-plus/es')['ElButton']
+    ElDatePicker: typeof import('element-plus/es')['ElDatePicker']
     ElIcon: typeof import('element-plus/es')['ElIcon']
+    ElInput: typeof import('element-plus/es')['ElInput']
+    ElOption: typeof import('element-plus/es')['ElOption']
+    ElSelect: typeof import('element-plus/es')['ElSelect']
     Empty: typeof import('./src/components/Empty.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

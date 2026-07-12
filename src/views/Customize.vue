@@ -377,15 +377,14 @@ async function exportTxt() {
               选择已有简历
             </div>
 
-            <select
-              v-model="selectedResumeId"
-              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            >
-              <option value="" disabled>请选择简历</option>
-              <option v-for="r in resumeStore.resumes" :key="r.id" :value="r.id">
-                {{ r.title }}（{{ getSourceTypeLabel(r) }}）
-              </option>
-            </select>
+            <el-select v-model="selectedResumeId" placeholder="请选择简历" class="w-full">
+              <el-option
+                v-for="r in resumeStore.resumes"
+                :key="r.id"
+                :value="r.id"
+                :label="`${r.title}（${getSourceTypeLabel(r)}）`"
+              />
+            </el-select>
 
             <p v-if="resumeStore.resumes.length === 0" class="mt-2 text-xs text-amber-600">
               还没有简历，请先去简历管理创建。
@@ -411,42 +410,38 @@ async function exportTxt() {
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label class="mb-1.5 block text-sm font-medium text-gray-700">公司名称 *</label>
-                <input
+                <el-input
                   v-model="companyName"
-                  type="text"
                   placeholder="例如：字节跳动"
-                  class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>
               <div>
                 <label class="mb-1.5 block text-sm font-medium text-gray-700">职位名称 *</label>
-                <input
+                <el-input
                   v-model="jobTitle"
-                  type="text"
                   placeholder="例如：前端工程师"
-                  class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>
             </div>
 
             <div>
               <label class="mb-1.5 block text-sm font-medium text-gray-700">岗位描述 *</label>
-              <textarea
+              <el-input
                 v-model="jobDescription"
-                rows="7"
+                type="textarea"
+                :rows="7"
                 placeholder="粘贴岗位 JD 内容..."
-                class="w-full resize-y rounded-lg border border-gray-200 px-3 py-2 text-sm leading-6 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              ></textarea>
+              />
             </div>
 
             <div>
               <label class="mb-1.5 block text-sm font-medium text-gray-700">公司信息（可选）</label>
-              <textarea
+              <el-input
                 v-model="companyInfo"
-                rows="4"
+                type="textarea"
+                :rows="4"
                 placeholder="公司规模、地点、业务、团队特点等..."
-                class="w-full resize-y rounded-lg border border-gray-200 px-3 py-2 text-sm leading-6 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              ></textarea>
+              />
             </div>
           </section>
 

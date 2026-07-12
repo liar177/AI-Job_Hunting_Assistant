@@ -103,10 +103,9 @@ async function exportPdf() {
       <!-- 标题编辑 -->
       <div class="flex-1 min-w-0 flex items-center gap-2">
         <template v-if="titleEditing">
-          <input
+          <el-input
             v-model="titleInput"
-            type="text"
-            class="flex-1 min-w-0 px-3 py-1.5 rounded-md border border-gray-200 text-sm font-medium focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            class="flex-1"
             @keyup.enter="saveTitle"
             @keyup.esc="cancelEditTitle"
           />
@@ -152,11 +151,12 @@ async function exportPdf() {
           </div>
           <span class="text-xs text-gray-400">{{ content.length }} 字符</span>
         </div>
-        <textarea
+        <el-input
           v-model="content"
-          class="flex-1 w-full p-4 text-sm font-mono text-gray-800 resize-none focus:outline-none"
+          type="textarea"
+          class="flex-1 font-mono"
           placeholder="在此输入 Markdown 内容..."
-        ></textarea>
+        />
       </section>
 
       <!-- 右侧预览 -->

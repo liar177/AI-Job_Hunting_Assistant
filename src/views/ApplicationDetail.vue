@@ -62,10 +62,17 @@ const relatedResume = computed<Resume | undefined>(() =>
   app.value ? resumeStore.resumes.find((r) => r.id === app.value!.resumeId) : undefined
 )
 
+function nowDateTimeLocal(): string {
+  const d = new Date()
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16)
+}
+
 function syncInterviewForm() {
   const schedule = activeInterview.value
   interviewForm.value = {
-    interviewAt: toDateTimeLocalValue(schedule?.interviewAt),
+    interviewAt: toDateTimeLocalValue(schedule?.interviewAt) || nowDateTimeLocal(),
     mode: schedule?.mode || 'online',
     location: schedule?.location || '',
     interviewer: schedule?.interviewer || '',
@@ -261,41 +268,39 @@ function handleDelete() {
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">
                   {{ getInterviewStageLabel(activeStage) }}时间 *
                 </label>
-                <input
+                <el-date-picker
                   v-model="interviewForm.interviewAt"
-                  type="datetime-local"
-                  class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  type="datetime"
+                  value-format="YYYY-MM-DDTHH:mm"
+                  :placeholder="'选择日期时间'"
+                  class="w-full"
                 />
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">线上或线下 *</label>
-                <select
-                  v-model="interviewForm.mode"
-                  class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                >
-                  <option v-for="opt in INTERVIEW_MODE_OPTIONS" :key="opt.value" :value="opt.value">
-                    {{ opt.label }}
-                  </option>
-                </select>
+                <el-select v-model="interviewForm.mode" class="w-full">
+                  <el-option
+                    v-for="opt in INTERVIEW_MODE_OPTIONS"
+                    :key="opt.value"
+                    :value="opt.value"
+                    :label="opt.label"
+                  />
+                </el-select>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">
                   {{ interviewForm.mode === 'online' ? '会议软件/链接 *' : '面试地点 *' }}
                 </label>
-                <input
+                <el-input
                   v-model="interviewForm.location"
-                  type="text"
                   :placeholder="interviewForm.mode === 'online' ? '例如：腾讯会议 / 飞书会议' : '例如：北京望京 SOHO A 座'"
-                  class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
                 />
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">面试官</label>
-                <input
+                <el-input
                   v-model="interviewForm.interviewer"
-                  type="text"
                   placeholder="例如：李工 / 王 HR"
-                  class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
                 />
               </div>
             </div>
@@ -397,12 +402,12 @@ function handleDelete() {
             </div>
           </div>
           <template v-if="notesEditing">
-            <textarea
+            <el-input
               v-model="notesInput"
-              rows="4"
-              class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary resize-y"
+              type="textarea"
+              :rows="4"
               placeholder="添加备注..."
-            ></textarea>
+            />
             <div class="flex items-center justify-end gap-2 mt-2">
               <button
                 @click="cancelEditNotes"

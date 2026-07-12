@@ -256,21 +256,20 @@ function preview(content: string): string {
         <div class="px-6 py-5 space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">简历标题</label>
-            <input
+            <el-input
               v-model="newTitle"
-              type="text"
               placeholder="例如：Java后端工程师简历"
-              class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
             />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">简历内容</label>
-            <textarea
+            <el-input
               v-model="newContent"
-              rows="10"
+              type="textarea"
+              :rows="10"
+              class="font-mono"
               placeholder="粘贴或输入简历内容，支持 Markdown 语法..."
-              class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary resize-y"
-            ></textarea>
+            />
           </div>
         </div>
 

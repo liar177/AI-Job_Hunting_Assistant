@@ -40,7 +40,7 @@ function showReminderNotification(event: ReminderEvent) {
 }
 
 async function initAndCheck() {
-  // 请求通知权限
+  // 确保通知权限（macOS 需要，Windows 无害）
   try {
     if (!(await isPermissionGranted())) {
       await requestPermission()

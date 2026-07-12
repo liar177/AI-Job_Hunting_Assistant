@@ -182,57 +182,39 @@ async function clearAllData() {
             <!-- Provider -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1.5">API Provider</label>
-              <select
-                v-model="provider"
-                @change="onProviderChange"
-                class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                <option value="deepseek">DeepSeek</option>
-                <option value="aliyun-bailian">阿里云百炼</option>
-                <option value="custom">自定义</option>
-              </select>
+              <el-select v-model="provider" @change="onProviderChange" class="w-full">
+                <el-option value="deepseek" label="DeepSeek" />
+                <el-option value="aliyun-bailian" label="阿里云百炼" />
+                <el-option value="custom" label="自定义" />
+              </el-select>
             </div>
 
             <!-- API Key -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1.5">API Key</label>
-              <div class="relative">
-                <input
-                  v-model="apiKey"
-                  :type="showApiKey ? 'text' : 'password'"
-                  placeholder="输入 API Key..."
-                  class="w-full px-3 py-2 pr-10 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                />
-                <button
-                  type="button"
-                  @click="showApiKey = !showApiKey"
-                  class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <Eye v-if="!showApiKey" class="w-4 h-4" />
-                  <EyeOff v-else class="w-4 h-4" />
-                </button>
-              </div>
+              <el-input
+                v-model="apiKey"
+                type="password"
+                show-password
+                placeholder="输入 API Key..."
+              />
             </div>
 
             <!-- Base URL -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1.5">Base URL</label>
-              <input
+              <el-input
                 v-model="baseUrl"
-                type="text"
                 placeholder="https://api.deepseek.com/v1"
-                class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               />
             </div>
 
             <!-- Model -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1.5">Model</label>
-              <input
+              <el-input
                 v-model="model"
-                type="text"
                 placeholder="deepseek-chat"
-                class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               />
             </div>
 
@@ -245,77 +227,56 @@ async function clearAllData() {
               <div class="space-y-4">
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1.5">匹配模式</label>
-                  <select
-                    v-model="ragMode"
-                    class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="auto">自动（优先语义向量，失败降级关键词）</option>
-                    <option value="embedding">仅语义向量</option>
-                    <option value="keyword">仅关键词匹配</option>
-                  </select>
+                  <el-select v-model="ragMode" class="w-full">
+                    <el-option value="auto" label="自动（优先语义向量，失败降级关键词）" />
+                    <el-option value="embedding" label="仅语义向量" />
+                    <el-option value="keyword" label="仅关键词匹配" />
+                  </el-select>
                 </div>
 
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1.5">Embedding Provider</label>
-                  <select
-                    v-model="embeddingProvider"
-                    class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="aliyun-bailian">阿里云百炼</option>
-                    <option value="openai-compatible">OpenAI 兼容</option>
-                    <option value="custom">自定义</option>
-                  </select>
+                  <el-select v-model="embeddingProvider" class="w-full">
+                    <el-option value="aliyun-bailian" label="阿里云百炼" />
+                    <el-option value="openai-compatible" label="OpenAI 兼容" />
+                    <el-option value="custom" label="自定义" />
+                  </el-select>
                 </div>
 
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1.5">Embedding API Key</label>
-                  <div class="relative">
-                    <input
-                      v-model="embeddingApiKey"
-                      :type="showEmbeddingApiKey ? 'text' : 'password'"
-                      placeholder="输入百炼 DashScope API Key..."
-                      class="w-full px-3 py-2 pr-10 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                    <button
-                      type="button"
-                      @click="showEmbeddingApiKey = !showEmbeddingApiKey"
-                      class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                    >
-                      <Eye v-if="!showEmbeddingApiKey" class="w-4 h-4" />
-                      <EyeOff v-else class="w-4 h-4" />
-                    </button>
-                  </div>
+                  <el-input
+                    v-model="embeddingApiKey"
+                    type="password"
+                    show-password
+                    placeholder="输入百炼 DashScope API Key..."
+                  />
                 </div>
 
                 <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1.5">Embedding Model</label>
-                    <input
+                    <el-input
                       v-model="embeddingModel"
-                      type="text"
                       placeholder="text-embedding-v4"
-                      class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                   </div>
                   <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1.5">Dimension（可选）</label>
-                    <input
+                    <el-input
                       v-model.number="embeddingDimension"
                       type="number"
-                      min="1"
+                      :min="1"
                       placeholder="留空使用模型默认"
-                      class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                   </div>
                 </div>
 
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1.5">Embedding Endpoint</label>
-                  <input
+                  <el-input
                     v-model="embeddingEndpoint"
-                    type="text"
                     placeholder="https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding"
-                    class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
                   />
                 </div>
               </div>

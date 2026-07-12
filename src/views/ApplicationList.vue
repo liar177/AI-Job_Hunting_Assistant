@@ -226,13 +226,15 @@ function handleDelete(id: string, companyName: string, jobTitle: string, event: 
       <section class="bg-white rounded-xl border border-gray-100 p-4 mb-4">
         <div class="flex flex-col xl:flex-row xl:items-center gap-3 mb-3">
           <div class="relative flex-1">
-            <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
+            <el-input
               v-model="store.searchQuery"
-              type="text"
               placeholder="搜索公司名或职位..."
-              class="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            />
+              clearable
+            >
+              <template #prefix>
+                <Search class="w-4 h-4 text-gray-400" />
+              </template>
+            </el-input>
           </div>
           <div class="inline-flex w-fit rounded-lg border border-gray-200 bg-gray-50 p-1">
             <button
@@ -540,68 +542,65 @@ function handleDelete(id: string, companyName: string, jobTitle: string, event: 
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1.5">公司名称 *</label>
-              <input
+              <el-input
                 v-model="form.companyName"
-                type="text"
                 placeholder="例如：字节跳动"
-                class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1.5">职位名称 *</label>
-              <input
+              <el-input
                 v-model="form.jobTitle"
-                type="text"
                 placeholder="例如：前端工程师"
-                class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               />
             </div>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">选择简历 *</label>
-            <select
-              v-model="form.resumeId"
-              class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            >
-              <option value="" disabled>请选择简历</option>
-              <option v-for="r in resumeStore.resumes" :key="r.id" :value="r.id">{{ r.title }}</option>
-            </select>
+            <el-select v-model="form.resumeId" placeholder="请选择简历" class="w-full">
+              <el-option
+                v-for="r in resumeStore.resumes"
+                :key="r.id"
+                :value="r.id"
+                :label="r.title"
+              />
+            </el-select>
             <p v-if="resumeStore.resumes.length === 0" class="text-xs text-amber-600 mt-1">还没有简历，请先去简历管理创建</p>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">面试状态 *</label>
-            <select
-              v-model="form.status"
-              class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            >
-              <option v-for="opt in STATUS_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-            </select>
+            <el-select v-model="form.status" class="w-full">
+              <el-option
+                v-for="opt in STATUS_OPTIONS"
+                :key="opt.value"
+                :value="opt.value"
+                :label="opt.label"
+              />
+            </el-select>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">岗位描述</label>
-            <textarea
+            <el-input
               v-model="form.jobDescription"
-              rows="4"
+              type="textarea"
+              :rows="4"
               placeholder="粘贴 JD 内容..."
-              class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary resize-y"
-            ></textarea>
+            />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">公司信息</label>
-            <textarea
+            <el-input
               v-model="form.companyInfo"
-              rows="3"
+              type="textarea"
+              :rows="3"
               placeholder="公司规模、地点、业务等..."
-              class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary resize-y"
-            ></textarea>
+            />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">备注</label>
-            <input
+            <el-input
               v-model="form.notes"
-              type="text"
               placeholder="投递渠道、内推人等..."
-              class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
             />
           </div>
         </div>
