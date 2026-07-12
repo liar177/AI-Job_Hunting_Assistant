@@ -23,6 +23,7 @@ use crate::models::{
 };
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
+use uuid::Uuid;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -104,6 +105,7 @@ impl Database {
               company_info TEXT DEFAULT '',
               resume_id TEXT NOT NULL,
               status TEXT NOT NULL DEFAULT 'applied',
+              interviews TEXT DEFAULT '{}',
               notes TEXT DEFAULT '',
               applied_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
@@ -150,6 +152,14 @@ impl Database {
             "#,
         )
         .map_err(|err| err.to_string())?;
+
+        // 向前兼容：为旧版数据库添加 interviews 列（如果不存在）
+        conn.execute(
+            "ALTER TABLE applications ADD COLUMN interviews TEXT DEFAULT '{}'",
+            [],
+        )
+        .ok();
+
         Ok(())
     }
 
@@ -291,11 +301,12 @@ impl Database {
     pub fn get_applications(&self) -> Result<Vec<Application>, String> {
         let conn = self.conn.lock().map_err(|err| err.to_string())?;
         let mut stmt = conn.prepare(
-            "SELECT id, company_name, job_title, job_description, company_info, resume_id, status, notes, applied_at, updated_at
+            "SELECT id, company_name, job_title, job_description, company_info, resume_id, status, interviews, notes, applied_at, updated_at
              FROM applications ORDER BY datetime(updated_at) DESC",
         ).map_err(|err| err.to_string())?;
         let rows = stmt
             .query_map([], |row| {
+                let interviews_json: String = row.get::<_, String>(7).unwrap_or_default();
                 Ok(Application {
                     id: row.get(0)?,
                     company_name: row.get(1)?,
@@ -304,9 +315,10 @@ impl Database {
                     company_info: row.get(4)?,
                     resume_id: row.get(5)?,
                     status: row.get(6)?,
-                    notes: row.get(7)?,
-                    applied_at: row.get(8)?,
-                    updated_at: row.get(9)?,
+                    interviews: serde_json::from_str(&interviews_json).ok(),
+                    notes: row.get(8)?,
+                    applied_at: row.get(9)?,
+                    updated_at: row.get(10)?,
                 })
             })
             .map_err(|err| err.to_string())?;
@@ -317,10 +329,11 @@ impl Database {
     pub fn get_application(&self, id: &str) -> Result<Option<Application>, String> {
         let conn = self.conn.lock().map_err(|err| err.to_string())?;
         conn.query_row(
-            "SELECT id, company_name, job_title, job_description, company_info, resume_id, status, notes, applied_at, updated_at
+            "SELECT id, company_name, job_title, job_description, company_info, resume_id, status, interviews, notes, applied_at, updated_at
              FROM applications WHERE id = ?1",
             params![id],
             |row| {
+                let interviews_json: String = row.get::<_, String>(7).unwrap_or_default();
                 Ok(Application {
                     id: row.get(0)?,
                     company_name: row.get(1)?,
@@ -329,9 +342,10 @@ impl Database {
                     company_info: row.get(4)?,
                     resume_id: row.get(5)?,
                     status: row.get(6)?,
-                    notes: row.get(7)?,
-                    applied_at: row.get(8)?,
-                    updated_at: row.get(9)?,
+                    interviews: serde_json::from_str(&interviews_json).ok(),
+                    notes: row.get(8)?,
+                    applied_at: row.get(9)?,
+                    updated_at: row.get(10)?,
                 })
             },
         )
@@ -348,14 +362,15 @@ impl Database {
             company_info: data.company_info,
             resume_id: data.resume_id,
             status: data.status.unwrap_or_else(|| "applied".to_string()),
+            interviews: None,
             notes: data.notes.unwrap_or_default(),
             applied_at: now(),
             updated_at: now(),
         };
         let conn = self.conn.lock().map_err(|err| err.to_string())?;
         conn.execute(
-            "INSERT INTO applications (id, company_name, job_title, job_description, company_info, resume_id, status, notes, applied_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO applications (id, company_name, job_title, job_description, company_info, resume_id, status, interviews, notes, applied_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 application.id,
                 application.company_name,
@@ -364,6 +379,7 @@ impl Database {
                 application.company_info,
                 application.resume_id,
                 application.status,
+                "{}", // interviews: 新建时为空
                 application.notes,
                 application.applied_at,
                 application.updated_at
@@ -382,6 +398,11 @@ impl Database {
             Some(application) => application,
             None => return Ok(None),
         };
+        let interviews = data.interviews.or(current.interviews);
+        let interviews_json = interviews.as_ref()
+            .and_then(|i| serde_json::to_string(i).ok())
+            .unwrap_or_else(|| "{}".to_string());
+
         let updated = Application {
             company_name: data.company_name.unwrap_or(current.company_name),
             job_title: data.job_title.unwrap_or(current.job_title),
@@ -389,6 +410,7 @@ impl Database {
             company_info: data.company_info.unwrap_or(current.company_info),
             resume_id: data.resume_id.unwrap_or(current.resume_id),
             status: data.status.unwrap_or(current.status),
+            interviews,
             notes: data.notes.unwrap_or(current.notes),
             updated_at: now(),
             ..current
@@ -396,8 +418,8 @@ impl Database {
         let conn = self.conn.lock().map_err(|err| err.to_string())?;
         conn.execute(
             "UPDATE applications
-             SET company_name = ?1, job_title = ?2, job_description = ?3, company_info = ?4, resume_id = ?5, status = ?6, notes = ?7, updated_at = ?8
-             WHERE id = ?9",
+             SET company_name = ?1, job_title = ?2, job_description = ?3, company_info = ?4, resume_id = ?5, status = ?6, notes = ?7, interviews = ?8, updated_at = ?9
+             WHERE id = ?10",
             params![
                 updated.company_name,
                 updated.job_title,
@@ -406,6 +428,7 @@ impl Database {
                 updated.resume_id,
                 updated.status,
                 updated.notes,
+                interviews_json,
                 updated.updated_at,
                 id
             ],
@@ -418,6 +441,35 @@ impl Database {
         let conn = self.conn.lock().map_err(|err| err.to_string())?;
         conn.execute("DELETE FROM applications WHERE id = ?1", params![id])
             .map_err(|err| err.to_string())?;
+        Ok(())
+    }
+
+    /// 标记某个面试阶段的提醒已发送
+    /// reminder_type: "1d" 或 "3h"
+    pub fn mark_reminder_sent(
+        &self,
+        app_id: &str,
+        stage: &str,
+        reminder_type: &str,
+    ) -> Result<(), String> {
+        let app = self.get_application(app_id)?.ok_or("application not found")?;
+        let mut interviews = app.interviews.clone().unwrap_or_default();
+
+        if let Some(schedule) = interviews.get_mut(stage) {
+            match reminder_type {
+                "1d" => schedule.reminder_sent_1d = Some(true),
+                "3h" => schedule.reminder_sent_3h = Some(true),
+                _ => {}
+            }
+        }
+
+        let interviews_json = serde_json::to_string(&interviews).unwrap_or_else(|_| "{}".to_string());
+        let conn = self.conn.lock().map_err(|err| err.to_string())?;
+        conn.execute(
+            "UPDATE applications SET interviews = ?1, updated_at = ?2 WHERE id = ?3",
+            params![interviews_json, now(), app_id],
+        )
+        .map_err(|err| err.to_string())?;
         Ok(())
     }
 

@@ -27,6 +27,7 @@ use crate::models::{
     RagMatchResult, Resume, ResumeInput, ResumeUpdate,
 };
 use crate::rag;
+use crate::reminder;
 use tauri::State;
 
 // ===== 简历命令 =====
@@ -150,4 +151,13 @@ pub async fn rag_match_resume_job(
     request: AnalyzeRequest,
 ) -> Result<RagMatchResult, String> {
     rag::match_resume_job(&db, request).await
+}
+
+/// 检查当前是否有到期的面试提醒（前端定时调用）
+/// 返回需要提醒的面试列表，由前端弹出桌面通知
+#[tauri::command]
+pub fn check_interview_reminders(
+    db: State<Database>,
+) -> Result<Vec<reminder::ReminderEvent>, String> {
+    reminder::check_reminders(&db)
 }

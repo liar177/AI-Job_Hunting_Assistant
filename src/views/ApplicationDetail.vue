@@ -154,9 +154,8 @@ async function saveInterview() {
   }
   const updated = await store.updateApplication(app.value.id, { interviews: updatedInterviews })
   if (updated) {
-    downloadInterviewIcs(updated, activeStage.value, schedule)
     interviewEditing.value = false
-    ElMessage.success('面试安排已保存，日历提醒文件已生成')
+    ElMessage.success('面试安排已保存，将在面试前 1 天和 3 小时通过桌面通知提醒你')
   }
 }
 
@@ -301,7 +300,7 @@ function handleDelete() {
               </div>
             </div>
             <div class="mt-4 rounded-lg bg-primary-50 border border-primary-100 px-3 py-2 text-xs text-primary">
-              保存后会生成日历提醒文件，内含提前 1 天和提前 3 小时两次提醒。
+              保存后将通过桌面通知提醒你，分别在面试前 1 天和 3 小时各提醒一次。
             </div>
             <div class="flex items-center justify-end gap-2 mt-4">
               <button
@@ -347,6 +346,14 @@ function handleDelete() {
                 <User class="w-4 h-4 text-primary" />
                 {{ activeInterview.interviewer || '面试官待定' }}
               </div>
+            </div>
+            <div class="mt-3 flex items-center justify-end">
+              <button
+                @click="downloadInterviewIcs(app, activeStage, activeInterview)"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-200 text-gray-500 text-xs font-medium hover:bg-gray-50 transition-colors"
+              >
+                <Bell class="w-3.5 h-3.5" />导出 ICS 日历文件
+              </button>
             </div>
           </div>
 

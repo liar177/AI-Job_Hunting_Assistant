@@ -48,6 +48,26 @@ pub struct ResumeUpdate {
 
 // ===== 投递记录 =====
 
+/// 面试安排，以 JSON 形式存储在 applications.interviews 列中
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InterviewSchedule {
+    pub interview_at: String,
+    pub mode: String, // online | offline
+    pub location: String,
+    pub interviewer: Option<String>,
+    pub calendar_reminder_status: Option<String>, // none | created | failed
+    pub updated_at: String,
+    /// 提前1天提醒是否已发送
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reminder_sent_1d: Option<bool>,
+    /// 提前3小时提醒是否已发送
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reminder_sent_3h: Option<bool>,
+}
+
+pub type InterviewSchedules = std::collections::HashMap<String, InterviewSchedule>;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Application {
@@ -58,6 +78,7 @@ pub struct Application {
     pub company_info: String,
     pub resume_id: String,
     pub status: String, // applied | technical | hr | boss | offer | rejected | withdrawn
+    pub interviews: Option<InterviewSchedules>,
     pub notes: String,
     pub applied_at: String,
     pub updated_at: String,
@@ -84,6 +105,7 @@ pub struct ApplicationUpdate {
     pub company_info: Option<String>,
     pub resume_id: Option<String>,
     pub status: Option<String>,
+    pub interviews: Option<InterviewSchedules>,
     pub notes: Option<String>,
 }
 
