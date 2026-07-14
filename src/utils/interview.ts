@@ -5,7 +5,7 @@ import type {
   InterviewSchedule,
   InterviewStage,
 } from '@/types'
-import { getStatusOption } from './constants'
+import { getStatusOption, statusRequiresInterview } from './constants'
 
 export interface InterviewItem {
   application: Application
@@ -22,15 +22,13 @@ export interface CalendarDay {
   interviews: InterviewItem[]
 }
 
-export const INTERVIEW_STAGES: InterviewStage[] = ['technical', 'hr', 'boss']
-
 export const INTERVIEW_MODE_OPTIONS: { value: InterviewMode; label: string }[] = [
   { value: 'online', label: '线上' },
   { value: 'offline', label: '线下' },
 ]
 
 export function isInterviewStage(status: ApplicationStatus): status is InterviewStage {
-  return INTERVIEW_STAGES.includes(status as InterviewStage)
+  return statusRequiresInterview(status)
 }
 
 export function getInterviewStageLabel(stage: InterviewStage): string {
@@ -59,8 +57,7 @@ export function needsInterviewInfo(application: Application): boolean {
 export function collectInterviewItems(applications: Application[]): InterviewItem[] {
   return applications
     .flatMap((application) =>
-      INTERVIEW_STAGES.flatMap((stage) => {
-        const schedule = application.interviews?.[stage]
+      Object.entries(application.interviews || {}).flatMap(([stage, schedule]) => {
         if (!schedule?.interviewAt) return []
         return [{ application, stage, schedule }]
       })

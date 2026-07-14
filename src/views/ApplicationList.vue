@@ -3,7 +3,9 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useApplicationStore } from '@/stores/application'
 import { useResumeStore } from '@/stores/resume'
-import { STATUS_OPTIONS, getStatusOption, formatDate } from '@/utils/constants'
+import { useApplicationStatusStore } from '@/stores/application-status'
+import { getStatusOption, formatDate } from '@/utils/constants'
+import StatusManagerDialog from '@/components/Application/StatusManagerDialog.vue'
 import {
   buildInterviewCalendarDays,
   formatInterviewDateTime,
@@ -38,6 +40,7 @@ import {
   ChevronRight,
   ArrowLeft,
   ArrowRight,
+  SlidersHorizontal,
 } from 'lucide-vue-next'
 
 type ViewMode = 'list' | 'timeline' | 'calendar'
@@ -46,8 +49,10 @@ const router = useRouter()
 const route = useRoute()
 const store = useApplicationStore()
 const resumeStore = useResumeStore()
+const statusStore = useApplicationStatusStore()
 
 const showModal = ref(false)
+const showStatusManager = ref(false)
 const viewMode = ref<ViewMode>('list')
 const calendarMonth = ref(new Date())
 const form = ref({
@@ -60,10 +65,10 @@ const form = ref({
   notes: '',
 })
 
-const tabs: { value: ApplicationStatus | 'all'; label: string }[] = [
+const tabs = computed<{ value: ApplicationStatus | 'all'; label: string }[]>(() => [
   { value: 'all', label: '全部' },
-  ...STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-]
+  ...statusStore.statuses.map((status) => ({ value: status.id, label: status.name })),
+])
 
 const viewModes: { value: ViewMode; label: string; icon: typeof List }[] = [
   { value: 'list', label: '列表', icon: List },
@@ -88,7 +93,8 @@ const timelineGroups = computed(() => {
   return Array.from(groups.entries()).map(([label, items]) => ({ label, items }))
 })
 
-onMounted(() => {
+onMounted(async () => {
+  if (!statusStore.statuses.length) await statusStore.loadStatuses()
   store.loadApplications()
   resumeStore.loadResumes()
   const companyName = route.query.companyName as string
@@ -186,13 +192,22 @@ function handleDelete(id: string, companyName: string, jobTitle: string, event: 
         <h1 class="text-2xl font-semibold text-primary">投递管理</h1>
         <p class="text-sm text-gray-500 mt-1">跟踪投递进度、面试安排与日历提醒</p>
       </div>
-      <button
-        @click="openModal"
-        class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-700 transition-colors"
-      >
-        <Plus class="w-4 h-4" />
-        新建投递
-      </button>
+      <div class="flex items-center gap-3">
+        <button
+          @click="showStatusManager = true"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white text-primary text-sm font-medium hover:bg-primary-50 transition-colors"
+        >
+          <SlidersHorizontal class="w-4 h-4" />
+          状态设置
+        </button>
+        <button
+          @click="openModal"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-700 transition-colors"
+        >
+          <Plus class="w-4 h-4" />
+          新建投递
+        </button>
+      </div>
     </header>
 
     <main class="flex-1 overflow-auto px-8 py-6">
@@ -568,14 +583,19 @@ function handleDelete(id: string, companyName: string, jobTitle: string, event: 
             <p v-if="resumeStore.resumes.length === 0" class="text-xs text-amber-600 mt-1">还没有简历，请先去简历管理创建</p>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1.5">面试状态 *</label>
-            <el-select v-model="form.status" class="w-full">
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">投递状态 *</label>
+            <el-select v-model="form.status" class="w-full" popper-class="status-select-dropdown">
               <el-option
-                v-for="opt in STATUS_OPTIONS"
-                :key="opt.value"
-                :value="opt.value"
-                :label="opt.label"
-              />
+                v-for="status in statusStore.statuses"
+                :key="status.id"
+                :value="status.id"
+                :label="status.name"
+              >
+                <div class="py-1">
+                  <div class="text-sm text-gray-700">{{ status.name }}</div>
+                  <div class="max-w-[360px] truncate text-xs text-gray-400">{{ status.description }}</div>
+                </div>
+              </el-option>
             </el-select>
           </div>
           <div>
@@ -622,5 +642,7 @@ function handleDelete(id: string, companyName: string, jobTitle: string, event: 
         </div>
       </div>
     </div>
+
+    <StatusManagerDialog v-model="showStatusManager" />
   </div>
 </template>

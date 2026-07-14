@@ -13,12 +13,20 @@
 //
 // 因此浏览器模式仅用于开发调试，生产环境应使用桌面端。
 
-import type { Resume, Application, AIConfig } from '@/types'
+import type {
+  Resume,
+  Application,
+  AIConfig,
+  ApplicationStatusDefinition,
+  ApplicationStatusInput,
+} from '@/types'
+import { DEFAULT_STATUS_DEFINITIONS } from './constants'
 
 /** localStorage 键名常量，统一管理避免散落字符串 */
 export const STORAGE_KEYS = {
   RESUMES: 'job_assistant_resumes',
   APPLICATIONS: 'job_assistant_applications',
+  APPLICATION_STATUSES: 'job_assistant_application_statuses',
   AI_CONFIG: 'job_assistant_ai_config',
 } as const
 
@@ -188,6 +196,64 @@ export const applicationDb = {
     writeData(
       STORAGE_KEYS.APPLICATIONS,
       applications.filter((a) => a.id !== id)
+    )
+  },
+}
+
+// ===== 投递状态定义 CRUD =====
+
+function readStatusDefinitions(): ApplicationStatusDefinition[] {
+  const saved = readData<ApplicationStatusDefinition>(STORAGE_KEYS.APPLICATION_STATUSES)
+  const byId = new Map(saved.map((status) => [status.id, status]))
+  DEFAULT_STATUS_DEFINITIONS.forEach((status) => {
+    if (!byId.has(status.id)) byId.set(status.id, status)
+  })
+  const definitions = Array.from(byId.values()).sort((a, b) => a.sortOrder - b.sortOrder)
+  writeData(STORAGE_KEYS.APPLICATION_STATUSES, definitions)
+  return definitions
+}
+
+export const applicationStatusDb = {
+  getAll(): ApplicationStatusDefinition[] {
+    return readStatusDefinitions()
+  },
+
+  create(data: ApplicationStatusInput): ApplicationStatusDefinition {
+    const definitions = readStatusDefinitions()
+    const timestamp = now()
+    const maxSortOrder = definitions.reduce((max, status) => Math.max(max, status.sortOrder), 0)
+    const definition: ApplicationStatusDefinition = {
+      id: `custom_${generateId()}`,
+      ...data,
+      isSystem: false,
+      sortOrder: maxSortOrder + 10,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+    definitions.push(definition)
+    writeData(STORAGE_KEYS.APPLICATION_STATUSES, definitions)
+    return definition
+  },
+
+  update(id: string, data: ApplicationStatusInput): ApplicationStatusDefinition | undefined {
+    const definitions = readStatusDefinitions()
+    const index = definitions.findIndex((status) => status.id === id && !status.isSystem)
+    if (index === -1) return undefined
+    definitions[index] = { ...definitions[index], ...data, updatedAt: now() }
+    writeData(STORAGE_KEYS.APPLICATION_STATUSES, definitions)
+    return definitions[index]
+  },
+
+  delete(id: string): void {
+    const definitions = readStatusDefinitions()
+    const target = definitions.find((status) => status.id === id)
+    if (!target || target.isSystem) throw new Error('系统状态不能删除')
+    if (applicationDb.getAll().some((application) => application.status === id)) {
+      throw new Error('该状态正在被投递记录使用，请先迁移相关投递')
+    }
+    writeData(
+      STORAGE_KEYS.APPLICATION_STATUSES,
+      definitions.filter((status) => status.id !== id)
     )
   },
 }

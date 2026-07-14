@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AppLayout from '@/components/Layout/AppLayout.vue'
 import { onMounted, onUnmounted } from 'vue'
+import { useApplicationStatusStore } from '@/stores/application-status'
 import { invoke } from '@tauri-apps/api/core'
 import {
   sendNotification,
@@ -22,6 +23,7 @@ interface ReminderEvent {
 
 let timer: ReturnType<typeof setInterval> | undefined
 const notifiedIds = new Set<string>()
+const statusStore = useApplicationStatusStore()
 
 function showReminderNotification(event: ReminderEvent) {
   const id = `${event.applicationId}-${event.when}`
@@ -56,7 +58,8 @@ async function initAndCheck() {
   } catch { /* 静默处理 */ }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await statusStore.loadStatuses()
   initAndCheck()
   timer = setInterval(async () => {
     try {

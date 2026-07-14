@@ -18,19 +18,39 @@ export interface ResumeInput {
   sourceType?: string
 }
 
-// 投递状态类型
-export type ApplicationStatus =
-  | 'applied'      // 已投递
-  | 'hr_read'      // HR已读
-  | 'screen_pass'  // 初筛通过
-  | 'technical'    // 技术面
-  | 'hr'           // HR面
-  | 'boss'         // Boss面
-  | 'offer'        // 已Offer
-  | 'rejected'     // 已挂
-  | 'accepted'     // 已接
+// 投递状态 ID。系统状态沿用既有 ID，自定义状态使用生成的稳定 ID。
+export type ApplicationStatus = string
 
-export type InterviewStage = Extract<ApplicationStatus, 'technical' | 'hr' | 'boss'>
+export type StatusColor =
+  | 'blue'
+  | 'purple'
+  | 'cyan'
+  | 'green'
+  | 'amber'
+  | 'orange'
+  | 'red'
+  | 'gray'
+
+export interface ApplicationStatusDefinition {
+  id: ApplicationStatus
+  name: string
+  description: string
+  color: StatusColor
+  requiresInterviewSchedule: boolean
+  isSystem: boolean
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ApplicationStatusInput {
+  name: string
+  description: string
+  color: StatusColor
+  requiresInterviewSchedule: boolean
+}
+
+export type InterviewStage = ApplicationStatus
 
 export type InterviewMode = 'online' | 'offline'
 
@@ -45,7 +65,7 @@ export interface InterviewSchedule {
   updatedAt: string
 }
 
-export type InterviewSchedules = Partial<Record<InterviewStage, InterviewSchedule>>
+export type InterviewSchedules = Partial<Record<string, InterviewSchedule>>
 
 // 投递记录类型
 export interface Application {
@@ -159,4 +179,6 @@ export interface StatusOption {
   value: ApplicationStatus
   label: string
   color: string
+  description?: string
+  requiresInterviewSchedule?: boolean
 }

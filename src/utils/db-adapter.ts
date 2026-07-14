@@ -19,11 +19,13 @@ import type {
   AnalyzeRequest,
   Application,
   ApplicationInput,
+  ApplicationStatusDefinition,
+  ApplicationStatusInput,
   RagMatchResult,
   Resume,
   ResumeInput,
 } from '@/types'
-import { aiConfigDb, applicationDb, resumeDb } from './db'
+import { aiConfigDb, applicationDb, applicationStatusDb, resumeDb } from './db'
 import { invokeTauri, isTauri } from './platform'
 import { matchResumeWithKeywordRag } from './rag'
 
@@ -73,6 +75,33 @@ export const db = {
 
     async delete(id: string): Promise<void> {
       return isTauri() ? invokeTauri<void>('delete_application', { id }) : applicationDb.delete(id)
+    },
+  },
+
+  // ===== 投递状态定义 =====
+  applicationStatuses: {
+    async getAll(): Promise<ApplicationStatusDefinition[]> {
+      return isTauri()
+        ? invokeTauri<ApplicationStatusDefinition[]>('get_application_statuses')
+        : applicationStatusDb.getAll()
+    },
+
+    async create(data: ApplicationStatusInput): Promise<ApplicationStatusDefinition> {
+      return isTauri()
+        ? invokeTauri<ApplicationStatusDefinition>('create_application_status', { data })
+        : applicationStatusDb.create(data)
+    },
+
+    async update(id: string, data: ApplicationStatusInput): Promise<ApplicationStatusDefinition | undefined> {
+      return isTauri()
+        ? invokeTauri<ApplicationStatusDefinition | undefined>('update_application_status', { id, data })
+        : applicationStatusDb.update(id, data)
+    },
+
+    async delete(id: string): Promise<void> {
+      return isTauri()
+        ? invokeTauri<void>('delete_application_status', { id })
+        : applicationStatusDb.delete(id)
     },
   },
 

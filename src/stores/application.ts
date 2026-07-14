@@ -7,6 +7,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Application, ApplicationInput, ApplicationStatus } from '@/types'
 import { db } from '@/utils/db-adapter'
+import { statusRequiresInterview } from '@/utils/constants'
 import {
   collectInterviewItems,
   getUpcomingInterviewItems,
@@ -56,7 +57,7 @@ export const useApplicationStore = defineStore('application', () => {
     return {
       total,
       applied: byStatus('applied'),
-      interviewing: byStatus('technical') + byStatus('hr') + byStatus('boss'),
+      interviewing: applications.value.filter((application) => statusRequiresInterview(application.status)).length,
       upcomingInterviews: getUpcomingInterviewItems(applications.value).length,
       todayInterviews: allInterviews.filter(
         (item) => new Date(item.schedule.interviewAt).toLocaleDateString('zh-CN') === todayKey

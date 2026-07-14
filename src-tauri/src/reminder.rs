@@ -11,6 +11,7 @@ use crate::db::Database;
 use crate::models::Application;
 use chrono::{DateTime, Duration, Utc};
 use serde::Serialize;
+use std::collections::HashMap;
 
 /// 传给前端的提醒事件数据
 #[derive(Debug, Clone, Serialize)]
@@ -32,6 +33,11 @@ pub struct ReminderEvent {
 /// 检查到期的面试提醒，返回需要通知的事件列表
 pub fn check_reminders(db: &Database) -> Result<Vec<ReminderEvent>, String> {
     let applications = db.get_applications()?;
+    let status_labels: HashMap<String, String> = db
+        .get_application_statuses()?
+        .into_iter()
+        .map(|status| (status.id, status.name))
+        .collect();
     let now = Utc::now();
     let mut events = Vec::new();
 
@@ -55,7 +61,13 @@ pub fn check_reminders(db: &Database) -> Result<Vec<ReminderEvent>, String> {
             // 检查提前 1 天提醒
             let one_day_before = interview_time - Duration::days(1);
             if now >= one_day_before && !schedule.reminder_sent_1d.unwrap_or(false) {
-                let event = build_event(app_record, stage, schedule, "1 天");
+                let event = build_event(
+                    app_record,
+                    stage,
+                    status_labels.get(stage),
+                    schedule,
+                    "1 天",
+                );
                 db.mark_reminder_sent(&app_record.id, stage, "1d")?;
                 events.push(event);
             }
@@ -63,7 +75,13 @@ pub fn check_reminders(db: &Database) -> Result<Vec<ReminderEvent>, String> {
             // 检查提前 3 小时提醒
             let three_hours_before = interview_time - Duration::hours(3);
             if now >= three_hours_before && !schedule.reminder_sent_3h.unwrap_or(false) {
-                let event = build_event(app_record, stage, schedule, "3 小时");
+                let event = build_event(
+                    app_record,
+                    stage,
+                    status_labels.get(stage),
+                    schedule,
+                    "3 小时",
+                );
                 db.mark_reminder_sent(&app_record.id, stage, "3h")?;
                 events.push(event);
             }
@@ -83,6 +101,7 @@ fn parse_rfc(s: &str) -> Option<DateTime<Utc>> {
 fn build_event(
     application: &Application,
     stage: &str,
+    stage_label: Option<&String>,
     schedule: &crate::models::InterviewSchedule,
     when: &str,
 ) -> ReminderEvent {
@@ -91,13 +110,7 @@ fn build_event(
         company_name: application.company_name.clone(),
         job_title: application.job_title.clone(),
         stage: stage.to_string(),
-        stage_label: match stage {
-            "technical" => "技术面",
-            "hr" => "HR面",
-            "boss" => "Boss面",
-            _ => stage,
-        }
-        .to_string(),
+        stage_label: stage_label.cloned().unwrap_or_else(|| stage.to_string()),
         interview_at: schedule.interview_at.clone(),
         mode: schedule.mode.clone(),
         mode_label: match schedule.mode.as_str() {

@@ -109,6 +109,31 @@ pub struct ApplicationUpdate {
     pub notes: Option<String>,
 }
 
+// ===== 投递状态定义 =====
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationStatusDefinition {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub color: String,
+    pub requires_interview_schedule: bool,
+    pub is_system: bool,
+    pub sort_order: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationStatusInput {
+    pub name: String,
+    pub description: String,
+    pub color: String,
+    pub requires_interview_schedule: bool,
+}
+
 // ===== AI 配置 =====
 //
 // embedding_dimension 是 Option<i64>：留空则使用模型默认维度（如 text-embedding-v4 的 1024）。
@@ -122,7 +147,7 @@ pub struct AiConfig {
     pub api_key: String,
     pub model: String,
     pub base_url: String,
-    pub rag_mode: String,              // auto | embedding | keyword
+    pub rag_mode: String, // auto | embedding | keyword
     pub embedding_provider: String,
     pub embedding_api_key: String,
     pub embedding_model: String,

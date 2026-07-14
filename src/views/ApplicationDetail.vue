@@ -3,7 +3,8 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useApplicationStore } from '@/stores/application'
 import { useResumeStore } from '@/stores/resume'
-import { STATUS_OPTIONS, getStatusOption, formatDate } from '@/utils/constants'
+import { useApplicationStatusStore } from '@/stores/application-status'
+import { getStatusOption, formatDate } from '@/utils/constants'
 import { renderMarkdown } from '@/utils/markdown'
 import {
   downloadInterviewIcs,
@@ -40,6 +41,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useApplicationStore()
 const resumeStore = useResumeStore()
+const statusStore = useApplicationStatusStore()
 
 const notesEditing = ref(false)
 const notesInput = ref('')
@@ -88,7 +90,8 @@ async function loadApplicationData(id: string) {
   syncInterviewForm()
 }
 
-onMounted(() => {
+onMounted(async () => {
+  if (!statusStore.statuses.length) await statusStore.loadStatuses()
   resumeStore.loadResumes()
   loadApplicationData(route.params.id as string)
 })
@@ -221,18 +224,19 @@ function handleDelete() {
         </button>
         <div
           v-if="statusDropdownOpen"
-          class="absolute right-0 mt-1 w-40 bg-white rounded-lg border border-gray-100 shadow-lg z-10 py-1"
+          class="absolute right-0 mt-1 w-64 bg-white rounded-lg border border-gray-100 shadow-lg z-10 py-1"
         >
           <button
-            v-for="opt in STATUS_OPTIONS"
-            :key="opt.value"
-            @click="selectStatus(opt.value)"
+            v-for="status in statusStore.statuses"
+            :key="status.id"
+            @click="selectStatus(status.id)"
             :class="[
-              'w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50',
-              app.status === opt.value ? 'font-semibold text-primary' : 'text-gray-600',
+              'w-full text-left px-3 py-2 hover:bg-gray-50',
+              app.status === status.id ? 'bg-primary-50' : '',
             ]"
           >
-            {{ opt.label }}
+            <span :class="['block text-xs', app.status === status.id ? 'font-semibold text-primary' : 'text-gray-700']">{{ status.name }}</span>
+            <span class="mt-0.5 block truncate text-[11px] text-gray-400">{{ status.description }}</span>
           </button>
         </div>
       </div>
@@ -246,7 +250,7 @@ function handleDelete() {
               <div class="flex items-center gap-2 text-sm font-medium text-gray-700">
                 <Calendar class="w-4 h-4 text-primary" />面试安排
               </div>
-              <p class="text-xs text-gray-400 mt-1">技术面、HR 面、Boss 面会分别保存对应安排</p>
+              <p class="text-xs text-gray-400 mt-1">需要面试安排的状态会分别保存对应时间、形式和地点</p>
             </div>
             <button
               v-if="activeStage && !interviewEditing"
@@ -259,7 +263,7 @@ function handleDelete() {
           </div>
 
           <div v-if="!activeStage" class="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-500">
-            当前状态不是面试阶段。切换到技术面、HR 面或 Boss 面后即可填写面试时间、形式、地点和面试官。
+            当前状态无需填写面试安排。切换到需要面试安排的状态后即可填写时间、形式、地点和面试官。
           </div>
 
           <template v-else-if="interviewEditing">

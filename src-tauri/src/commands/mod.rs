@@ -23,8 +23,9 @@
 use crate::db::Database;
 use crate::exporter;
 use crate::models::{
-    AiConfig, AiConfigUpdate, AnalyzeRequest, Application, ApplicationInput, ApplicationUpdate,
-    RagMatchResult, Resume, ResumeInput, ResumeUpdate,
+    AiConfig, AiConfigUpdate, AnalyzeRequest, Application, ApplicationInput,
+    ApplicationStatusDefinition, ApplicationStatusInput, ApplicationUpdate, RagMatchResult, Resume,
+    ResumeInput, ResumeUpdate,
 };
 use crate::rag;
 use crate::reminder;
@@ -94,6 +95,37 @@ pub fn update_application(
 #[tauri::command]
 pub fn delete_application(db: State<Database>, id: String) -> Result<(), String> {
     db.delete_application(&id)
+}
+
+// ===== 投递状态定义命令 =====
+
+#[tauri::command]
+pub fn get_application_statuses(
+    db: State<Database>,
+) -> Result<Vec<ApplicationStatusDefinition>, String> {
+    db.get_application_statuses()
+}
+
+#[tauri::command]
+pub fn create_application_status(
+    db: State<Database>,
+    data: ApplicationStatusInput,
+) -> Result<ApplicationStatusDefinition, String> {
+    db.create_application_status(data)
+}
+
+#[tauri::command]
+pub fn update_application_status(
+    db: State<Database>,
+    id: String,
+    data: ApplicationStatusInput,
+) -> Result<Option<ApplicationStatusDefinition>, String> {
+    db.update_application_status(&id, data)
+}
+
+#[tauri::command]
+pub fn delete_application_status(db: State<Database>, id: String) -> Result<(), String> {
+    db.delete_application_status(&id)
 }
 
 // ===== AI 配置命令 =====

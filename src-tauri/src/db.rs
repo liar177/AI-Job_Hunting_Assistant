@@ -18,14 +18,14 @@
 //   rag_chunks    —— RAG 分块 + 嵌入向量
 
 use crate::models::{
-    AiConfig, AiConfigUpdate, Application, ApplicationInput, ApplicationUpdate, RagChunk, Resume,
-    ResumeInput, ResumeUpdate,
+    AiConfig, AiConfigUpdate, Application, ApplicationInput, ApplicationStatusDefinition,
+    ApplicationStatusInput, ApplicationUpdate, RagChunk, Resume, ResumeInput, ResumeUpdate,
 };
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
-use uuid::Uuid;
 use std::path::Path;
 use std::sync::Mutex;
+use uuid::Uuid;
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -112,6 +112,18 @@ impl Database {
               FOREIGN KEY (resume_id) REFERENCES resumes(id)
             );
 
+            CREATE TABLE IF NOT EXISTS application_statuses (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              description TEXT NOT NULL DEFAULT '',
+              color TEXT NOT NULL DEFAULT 'gray',
+              requires_interview_schedule INTEGER NOT NULL DEFAULT 0,
+              is_system INTEGER NOT NULL DEFAULT 0,
+              sort_order INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS ai_config (
               id TEXT PRIMARY KEY DEFAULT 'default',
               provider TEXT NOT NULL DEFAULT 'deepseek',
@@ -146,6 +158,7 @@ impl Database {
             );
 
             CREATE INDEX IF NOT EXISTS idx_applications_resume_id ON applications(resume_id);
+            CREATE INDEX IF NOT EXISTS idx_application_statuses_sort ON application_statuses(sort_order);
             CREATE INDEX IF NOT EXISTS idx_rag_chunks_resume_id ON rag_chunks(resume_id);
             CREATE INDEX IF NOT EXISTS idx_rag_chunks_resume_version ON rag_chunks(resume_id, resume_version);
             CREATE INDEX IF NOT EXISTS idx_rag_chunks_hash ON rag_chunks(resume_id, content_hash);
@@ -159,6 +172,49 @@ impl Database {
             [],
         )
         .ok();
+
+        let seed_time = "2026-01-01T00:00:00.000Z";
+        let system_statuses = [
+            (
+                "applied",
+                "已投递",
+                "已完成岗位投递，等待后续反馈",
+                "blue",
+                0,
+                10,
+            ),
+            ("hr_read", "HR已读", "招聘方已查看投递材料", "cyan", 0, 20),
+            (
+                "screen_pass",
+                "初筛通过",
+                "简历筛选通过，等待下一步安排",
+                "cyan",
+                0,
+                30,
+            ),
+            ("technical", "技术面", "进入技术面试阶段", "purple", 1, 40),
+            ("hr", "HR面", "进入 HR 面试阶段", "purple", 1, 50),
+            ("boss", "Boss面", "进入负责人面试阶段", "amber", 1, 60),
+            (
+                "offer",
+                "已Offer",
+                "已收到录用意向或正式 Offer",
+                "green",
+                0,
+                70,
+            ),
+            ("rejected", "已挂", "本次投递流程已结束", "red", 0, 80),
+            ("accepted", "已接", "已接受 Offer", "green", 0, 90),
+        ];
+        for (id, name, description, color, requires_interview, sort_order) in system_statuses {
+            conn.execute(
+                "INSERT OR IGNORE INTO application_statuses
+                 (id, name, description, color, requires_interview_schedule, is_system, sort_order, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, ?7)",
+                params![id, name, description, color, requires_interview, sort_order, seed_time],
+            )
+            .map_err(|err| err.to_string())?;
+        }
 
         Ok(())
     }
@@ -399,7 +455,8 @@ impl Database {
             None => return Ok(None),
         };
         let interviews = data.interviews.or(current.interviews);
-        let interviews_json = interviews.as_ref()
+        let interviews_json = interviews
+            .as_ref()
             .and_then(|i| serde_json::to_string(i).ok())
             .unwrap_or_else(|| "{}".to_string());
 
@@ -444,6 +501,157 @@ impl Database {
         Ok(())
     }
 
+    // ===== 投递状态定义 CRUD =====
+
+    pub fn get_application_statuses(&self) -> Result<Vec<ApplicationStatusDefinition>, String> {
+        let conn = self.conn.lock().map_err(|err| err.to_string())?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, color, requires_interview_schedule, is_system, sort_order, created_at, updated_at
+             FROM application_statuses ORDER BY sort_order ASC, datetime(created_at) ASC",
+        ).map_err(|err| err.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(ApplicationStatusDefinition {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    color: row.get(3)?,
+                    requires_interview_schedule: row.get::<_, i64>(4)? != 0,
+                    is_system: row.get::<_, i64>(5)? != 0,
+                    sort_order: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            })
+            .map_err(|err| err.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|err| err.to_string())
+    }
+
+    pub fn create_application_status(
+        &self,
+        data: ApplicationStatusInput,
+    ) -> Result<ApplicationStatusDefinition, String> {
+        let conn = self.conn.lock().map_err(|err| err.to_string())?;
+        let duplicate_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM application_statuses WHERE lower(name) = lower(?1)",
+                params![data.name.trim()],
+                |row| row.get(0),
+            )
+            .map_err(|err| err.to_string())?;
+        if duplicate_count > 0 {
+            return Err("状态名称已存在".to_string());
+        }
+        let sort_order: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(sort_order), 0) + 10 FROM application_statuses",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|err| err.to_string())?;
+        let timestamp = now();
+        let status = ApplicationStatusDefinition {
+            id: format!("custom_{}", new_id()),
+            name: data.name.trim().to_string(),
+            description: data.description.trim().to_string(),
+            color: data.color,
+            requires_interview_schedule: data.requires_interview_schedule,
+            is_system: false,
+            sort_order,
+            created_at: timestamp.clone(),
+            updated_at: timestamp,
+        };
+        conn.execute(
+            "INSERT INTO application_statuses
+             (id, name, description, color, requires_interview_schedule, is_system, sort_order, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?8)",
+            params![status.id, status.name, status.description, status.color, status.requires_interview_schedule, status.sort_order, status.created_at, status.updated_at],
+        ).map_err(|err| err.to_string())?;
+        Ok(status)
+    }
+
+    pub fn update_application_status(
+        &self,
+        id: &str,
+        data: ApplicationStatusInput,
+    ) -> Result<Option<ApplicationStatusDefinition>, String> {
+        let conn = self.conn.lock().map_err(|err| err.to_string())?;
+        let is_system = conn
+            .query_row(
+                "SELECT is_system FROM application_statuses WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(|err| err.to_string())?;
+        match is_system {
+            None => return Ok(None),
+            Some(value) if value != 0 => return Err("系统状态不能编辑".to_string()),
+            _ => {}
+        }
+        let duplicate_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM application_statuses WHERE lower(name) = lower(?1) AND id != ?2",
+            params![data.name.trim(), id],
+            |row| row.get(0),
+        ).map_err(|err| err.to_string())?;
+        if duplicate_count > 0 {
+            return Err("状态名称已存在".to_string());
+        }
+        let updated_at = now();
+        conn.execute(
+            "UPDATE application_statuses SET name = ?1, description = ?2, color = ?3,
+             requires_interview_schedule = ?4, updated_at = ?5 WHERE id = ?6",
+            params![
+                data.name.trim(),
+                data.description.trim(),
+                data.color,
+                data.requires_interview_schedule,
+                updated_at,
+                id
+            ],
+        )
+        .map_err(|err| err.to_string())?;
+        drop(conn);
+        Ok(self
+            .get_application_statuses()?
+            .into_iter()
+            .find(|status| status.id == id))
+    }
+
+    pub fn delete_application_status(&self, id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|err| err.to_string())?;
+        let is_system = conn
+            .query_row(
+                "SELECT is_system FROM application_statuses WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(|err| err.to_string())?;
+        match is_system {
+            None => return Ok(()),
+            Some(value) if value != 0 => return Err("系统状态不能删除".to_string()),
+            _ => {}
+        }
+        let usage_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM applications WHERE status = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .map_err(|err| err.to_string())?;
+        if usage_count > 0 {
+            return Err("该状态正在被投递记录使用，请先迁移相关投递".to_string());
+        }
+        conn.execute(
+            "DELETE FROM application_statuses WHERE id = ?1",
+            params![id],
+        )
+        .map_err(|err| err.to_string())?;
+        Ok(())
+    }
+
     /// 标记某个面试阶段的提醒已发送
     /// reminder_type: "1d" 或 "3h"
     pub fn mark_reminder_sent(
@@ -452,7 +660,9 @@ impl Database {
         stage: &str,
         reminder_type: &str,
     ) -> Result<(), String> {
-        let app = self.get_application(app_id)?.ok_or("application not found")?;
+        let app = self
+            .get_application(app_id)?
+            .ok_or("application not found")?;
         let mut interviews = app.interviews.clone().unwrap_or_default();
 
         if let Some(schedule) = interviews.get_mut(stage) {
@@ -463,7 +673,8 @@ impl Database {
             }
         }
 
-        let interviews_json = serde_json::to_string(&interviews).unwrap_or_else(|_| "{}".to_string());
+        let interviews_json =
+            serde_json::to_string(&interviews).unwrap_or_else(|_| "{}".to_string());
         let conn = self.conn.lock().map_err(|err| err.to_string())?;
         conn.execute(
             "UPDATE applications SET interviews = ?1, updated_at = ?2 WHERE id = ?3",
@@ -637,5 +848,92 @@ impl Database {
         )
         .map_err(|err| err.to_string())?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_database() -> (Database, std::path::PathBuf) {
+        let path =
+            std::env::temp_dir().join(format!("ai-job-assistant-status-test-{}", Uuid::new_v4()));
+        let database = Database::new(&path).expect("create test database");
+        (database, path)
+    }
+
+    fn custom_status_input(name: &str) -> ApplicationStatusInput {
+        ApplicationStatusInput {
+            name: name.to_string(),
+            description: "用于测试的自定义投递状态".to_string(),
+            color: "purple".to_string(),
+            requires_interview_schedule: true,
+        }
+    }
+
+    #[test]
+    fn custom_status_can_be_created_updated_and_deleted() {
+        let (database, path) = test_database();
+        assert_eq!(database.get_application_statuses().unwrap().len(), 9);
+
+        let created = database
+            .create_application_status(custom_status_input("笔试"))
+            .unwrap();
+        assert!(!created.is_system);
+        assert_eq!(created.color, "purple");
+        assert!(created.requires_interview_schedule);
+
+        let updated = database
+            .update_application_status(
+                &created.id,
+                ApplicationStatusInput {
+                    name: "线上笔试".to_string(),
+                    description: "等待完成线上笔试".to_string(),
+                    color: "cyan".to_string(),
+                    requires_interview_schedule: false,
+                },
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(updated.name, "线上笔试");
+        assert_eq!(updated.color, "cyan");
+        assert!(!updated.requires_interview_schedule);
+
+        database.delete_application_status(&created.id).unwrap();
+        assert_eq!(database.get_application_statuses().unwrap().len(), 9);
+        drop(database);
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn status_in_use_cannot_be_deleted() {
+        let (database, path) = test_database();
+        let status = database
+            .create_application_status(custom_status_input("背调中"))
+            .unwrap();
+        let resume = database
+            .create_resume(ResumeInput {
+                title: "测试简历".to_string(),
+                content: "测试内容".to_string(),
+                original_content: "测试内容".to_string(),
+                source_type: Some("manual".to_string()),
+            })
+            .unwrap();
+        database
+            .create_application(ApplicationInput {
+                company_name: "测试公司".to_string(),
+                job_title: "测试职位".to_string(),
+                job_description: String::new(),
+                company_info: String::new(),
+                resume_id: resume.id,
+                status: Some(status.id.clone()),
+                notes: None,
+            })
+            .unwrap();
+
+        let error = database.delete_application_status(&status.id).unwrap_err();
+        assert!(error.contains("正在被投递记录使用"));
+        drop(database);
+        let _ = std::fs::remove_dir_all(path);
     }
 }
