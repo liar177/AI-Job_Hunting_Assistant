@@ -343,9 +343,12 @@ function handleDelete() {
                 <Clock class="w-4 h-4 text-primary" />
                 {{ formatInterviewDateTime(activeInterview.interviewAt) }}
               </div>
-              <div class="flex items-center gap-2 text-gray-700">
-                <component :is="activeInterview.mode === 'online' ? Video : MapPin" class="w-4 h-4 text-primary" />
-                {{ activeInterview.location }}
+              <div class="flex items-start gap-2 min-w-0 text-gray-700">
+                <component
+                  :is="activeInterview.mode === 'online' ? Video : MapPin"
+                  class="w-4 h-4 mt-0.5 flex-shrink-0 text-primary"
+                />
+                <span class="min-w-0 break-all">{{ activeInterview.location }}</span>
               </div>
               <div class="flex items-center gap-2 text-gray-700">
                 <User class="w-4 h-4 text-primary" />
