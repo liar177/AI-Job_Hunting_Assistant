@@ -17,7 +17,7 @@ import {
   isInterviewStage,
   needsInterviewInfo,
 } from '@/utils/interview'
-import { ElMessageBox, ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus/es'
 import type { Application, ApplicationStatus } from '@/types'
 import type { InterviewItem } from '@/utils/interview'
 import {

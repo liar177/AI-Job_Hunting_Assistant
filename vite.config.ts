@@ -12,9 +12,12 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 1420,
     strictPort: true,
+    watch: {
+      ignored: ['**/src-tauri/target/**'],
+    },
   },
   build: {
-    sourcemap: 'hidden',
+    sourcemap: false,
   },
   plugins: [
     vue(),

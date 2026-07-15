@@ -1,4 +1,4 @@
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es'
 
 export type MessageType = 'success' | 'warning' | 'error' | 'info'
 

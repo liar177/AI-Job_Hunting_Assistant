@@ -1,8 +1,9 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import ElementPlus from 'element-plus'
+import { provideGlobalConfig } from 'element-plus/es'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import 'element-plus/dist/index.css'
+import 'element-plus/es/components/message/style/css'
+import 'element-plus/es/components/message-box/style/css'
 import './style.css'
 import App from './App.vue'
 import router from './router'
@@ -15,7 +16,7 @@ app.use(createPinia())
 // 使用路由
 app.use(router)
 // 使用Element Plus
-app.use(ElementPlus, { locale: zhCn })
+provideGlobalConfig({ locale: zhCn }, app, true)
 
 // 挂载应用
 app.mount('#app')

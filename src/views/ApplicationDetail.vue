@@ -18,7 +18,7 @@ import {
   isInterviewStage,
   toDateTimeLocalValue,
 } from '@/utils/interview'
-import { ElMessageBox, ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus/es'
 import type { ApplicationStatus, InterviewMode, InterviewStage, Resume } from '@/types'
 import {
   ArrowLeft,

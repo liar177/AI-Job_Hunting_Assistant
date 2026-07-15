@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useResumeStore } from '@/stores/resume'
 import { readFile } from '@/utils/markdown'
 import { formatDate } from '@/utils/constants'
-import { ElMessageBox, ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus/es'
 import { FileText, Plus, Eye, Trash2, Upload, X, Wand2 } from 'lucide-vue-next'
 import type { Resume } from '@/types'
 

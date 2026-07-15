@@ -1,21 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Dashboard from '@/views/Dashboard.vue'
-import ResumeList from '@/views/ResumeList.vue'
-import ResumeDetail from '@/views/ResumeDetail.vue'
-import Customize from '@/views/Customize.vue'
-import ApplicationList from '@/views/ApplicationList.vue'
-import ApplicationDetail from '@/views/ApplicationDetail.vue'
-import Settings from '@/views/Settings.vue'
 
 // 路由配置
 const routes = [
-  { path: '/', name: 'dashboard', component: Dashboard },
-  { path: '/resumes', name: 'resume-list', component: ResumeList },
-  { path: '/resumes/:id', name: 'resume-detail', component: ResumeDetail },
-  { path: '/customize', name: 'customize', component: Customize },
-  { path: '/applications', name: 'application-list', component: ApplicationList },
-  { path: '/applications/:id', name: 'application-detail', component: ApplicationDetail },
-  { path: '/settings', name: 'settings', component: Settings },
+  { path: '/', name: 'dashboard', component: () => import('@/views/Dashboard.vue') },
+  { path: '/resumes', name: 'resume-list', component: () => import('@/views/ResumeList.vue') },
+  { path: '/resumes/:id', name: 'resume-detail', component: () => import('@/views/ResumeDetail.vue') },
+  { path: '/customize', name: 'customize', component: () => import('@/views/Customize.vue') },
+  { path: '/applications', name: 'application-list', component: () => import('@/views/ApplicationList.vue') },
+  { path: '/applications/:id', name: 'application-detail', component: () => import('@/views/ApplicationDetail.vue') },
+  { path: '/settings', name: 'settings', component: () => import('@/views/Settings.vue') },
 ]
 
 const router = createRouter({

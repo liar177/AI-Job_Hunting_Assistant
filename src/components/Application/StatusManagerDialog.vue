@@ -2,7 +2,7 @@
 defineOptions({ inheritAttrs: false })
 
 import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus/es'
 import { useApplicationStatusStore } from '@/stores/application-status'
 import { useApplicationStore } from '@/stores/application'
 import { STATUS_COLOR_CLASSES, STATUS_COLOR_OPTIONS } from '@/utils/constants'
