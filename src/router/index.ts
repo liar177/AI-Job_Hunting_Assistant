@@ -1,8 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import Dashboard from '@/views/Dashboard.vue'
 
 // 路由配置
 const routes = [
-  { path: '/', name: 'dashboard', component: () => import('@/views/Dashboard.vue') },
+  { path: '/', name: 'dashboard', component: Dashboard },
   { path: '/resumes', name: 'resume-list', component: () => import('@/views/ResumeList.vue') },
   { path: '/resumes/:id', name: 'resume-detail', component: () => import('@/views/ResumeDetail.vue') },
   { path: '/customize', name: 'customize', component: () => import('@/views/Customize.vue') },
