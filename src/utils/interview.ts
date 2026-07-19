@@ -41,9 +41,16 @@ export function getInterviewModeLabel(mode?: InterviewMode): string {
   return '未设置'
 }
 
+export function getInterviewForStage(
+  application: Application,
+  stage: InterviewStage
+): InterviewSchedule | undefined {
+  return application.interviews?.[stage]
+}
+
 export function getCurrentInterview(application: Application): InterviewSchedule | undefined {
   if (!isInterviewStage(application.status)) return undefined
-  return application.interviews?.[application.status]
+  return getInterviewForStage(application, application.status)
 }
 
 export function hasCompleteInterview(schedule?: InterviewSchedule): boolean {

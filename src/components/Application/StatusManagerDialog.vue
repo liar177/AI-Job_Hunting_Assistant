@@ -6,6 +6,7 @@ import { ElMessage, ElMessageBox } from 'element-plus/es'
 import { useApplicationStatusStore } from '@/stores/application-status'
 import { useApplicationStore } from '@/stores/application'
 import { STATUS_COLOR_CLASSES, STATUS_COLOR_OPTIONS } from '@/utils/constants'
+import { useBackdropClose } from '@/composables/useBackdropClose'
 import type {
   ApplicationStatusDefinition,
   ApplicationStatusInput,
@@ -84,6 +85,9 @@ function closeEditor() {
   errorMessage.value = ''
 }
 
+const managerBackdrop = useBackdropClose(closeManager)
+const editorBackdrop = useBackdropClose(closeEditor)
+
 async function saveStatus() {
   if (!canSubmit.value) {
     errorMessage.value = '请填写状态名称和状态描述'
@@ -148,7 +152,10 @@ function selectColor(color: StatusColor) {
     <div
       v-if="modelValue"
       class="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4"
-      @click.self="closeManager"
+      @pointerdown="managerBackdrop.onBackdropPointerDown"
+      @pointerup="managerBackdrop.onBackdropPointerUp"
+      @pointercancel="managerBackdrop.onBackdropPointerCancel"
+      @click="managerBackdrop.onBackdropClick"
     >
       <section
         role="dialog"
@@ -242,7 +249,14 @@ function selectColor(color: StatusColor) {
       </section>
     </div>
 
-    <div v-if="modelValue && editorOpen" class="fixed inset-0 z-[80] flex items-center justify-center bg-black/30 p-4" @click.self="closeEditor">
+    <div
+      v-if="modelValue && editorOpen"
+      class="fixed inset-0 z-[80] flex items-center justify-center bg-black/30 p-4"
+      @pointerdown="editorBackdrop.onBackdropPointerDown"
+      @pointerup="editorBackdrop.onBackdropPointerUp"
+      @pointercancel="editorBackdrop.onBackdropPointerCancel"
+      @click="editorBackdrop.onBackdropClick"
+    >
       <section
         role="dialog"
         aria-modal="true"

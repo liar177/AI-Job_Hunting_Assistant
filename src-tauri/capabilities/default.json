@@ -3,5 +3,10 @@
   "identifier": "default",
   "description": "Default desktop permissions",
   "windows": ["main"],
-  "permissions": ["opener:default", "dialog:default", "notification:default"]
+  "permissions": [
+    "opener:default",
+    "dialog:default",
+    "notification:default",
+    "core:window:allow-show"
+  ]
 }

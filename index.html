@@ -1,10 +1,90 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Trae Project</title>
+    <title>AI 求职助手</title>
+    <style>
+      html,
+      body,
+      #app {
+        width: 100%;
+        min-height: 100%;
+        margin: 0;
+      }
+
+      body {
+        background: #f8fafc;
+        color: #1e293b;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      }
+
+      .startup-shell {
+        display: flex;
+        min-height: 100vh;
+        background: #fff;
+      }
+
+      .startup-sidebar {
+        width: 240px;
+        box-sizing: border-box;
+        flex: 0 0 240px;
+        padding: 20px 24px;
+        border-right: 1px solid #f1f5f9;
+      }
+
+      .startup-brand {
+        color: #1e3a5f;
+        font-size: 18px;
+        font-weight: 650;
+        letter-spacing: 0.01em;
+      }
+
+      .startup-tagline {
+        margin-top: 4px;
+        color: #94a3b8;
+        font-size: 12px;
+      }
+
+      .startup-content {
+        display: grid;
+        flex: 1;
+        place-items: center;
+        padding: 32px;
+      }
+
+      .startup-status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: #64748b;
+        font-size: 14px;
+      }
+
+      .startup-spinner {
+        width: 22px;
+        height: 22px;
+        box-sizing: border-box;
+        border: 2px solid #dbe7f5;
+        border-top-color: #1e3a5f;
+        border-radius: 50%;
+        animation: startup-spin 0.8s linear infinite;
+      }
+
+      @keyframes startup-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .startup-spinner {
+          animation: none;
+        }
+      }
+    </style>
     <script type="module">
       if (import.meta.hot?.on) {
         import.meta.hot.on('vite:error', (error) => {
@@ -18,7 +98,20 @@
     </script>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div class="startup-shell" aria-label="应用正在启动">
+        <aside class="startup-sidebar">
+          <div class="startup-brand">AI 求职助手</div>
+          <div class="startup-tagline">智能简历定制工具</div>
+        </aside>
+        <main class="startup-content">
+          <div class="startup-status" role="status">
+            <span class="startup-spinner" aria-hidden="true"></span>
+            <span>正在加载工作台…</span>
+          </div>
+        </main>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

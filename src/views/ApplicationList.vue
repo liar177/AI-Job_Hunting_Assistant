@@ -6,6 +6,7 @@ import { useResumeStore } from '@/stores/resume'
 import { useApplicationStatusStore } from '@/stores/application-status'
 import { getStatusOption, formatDate } from '@/utils/constants'
 import StatusManagerDialog from '@/components/Application/StatusManagerDialog.vue'
+import ApplicationFormDialog from '@/components/Application/ApplicationFormDialog.vue'
 import {
   buildInterviewCalendarDays,
   formatInterviewDateTime,
@@ -18,13 +19,12 @@ import {
   needsInterviewInfo,
 } from '@/utils/interview'
 import { ElMessage, ElMessageBox } from 'element-plus/es'
-import type { Application, ApplicationStatus } from '@/types'
+import type { Application, ApplicationInput, ApplicationStatus } from '@/types'
 import type { InterviewItem } from '@/utils/interview'
 import {
   Plus,
   Search,
   Briefcase,
-  X,
   Send,
   TrendingUp,
   Trash2,
@@ -52,18 +52,11 @@ const resumeStore = useResumeStore()
 const statusStore = useApplicationStatusStore()
 
 const showModal = ref(false)
+const creating = ref(false)
 const showStatusManager = ref(false)
 const viewMode = ref<ViewMode>('list')
 const calendarMonth = ref(new Date())
-const form = ref({
-  companyName: '',
-  jobTitle: '',
-  jobDescription: '',
-  companyInfo: '',
-  resumeId: '',
-  status: 'applied' as ApplicationStatus,
-  notes: '',
-})
+const createInitialData = ref<Partial<ApplicationInput>>({})
 
 const tabs = computed<{ value: ApplicationStatus | 'all'; label: string }[]>(() => [
   { value: 'all', label: '全部' },
@@ -101,44 +94,27 @@ onMounted(async () => {
   const jobTitle = route.query.jobTitle as string
   const resumeId = route.query.resumeId as string
   if (companyName || jobTitle || resumeId) {
-    form.value = {
-      companyName: companyName || '',
-      jobTitle: jobTitle || '',
-      jobDescription: '',
-      companyInfo: '',
-      resumeId: resumeId || '',
-      status: 'applied',
-      notes: '',
-    }
+    createInitialData.value = { companyName, jobTitle, resumeId }
     showModal.value = true
   }
 })
 
 function openModal() {
-  form.value = {
-    companyName: '', jobTitle: '', jobDescription: '',
-    companyInfo: '', resumeId: '', status: 'applied', notes: '',
-  }
+  createInitialData.value = {}
   showModal.value = true
 }
 
-function closeModal() {
-  showModal.value = false
-}
-
-async function submitCreate() {
-  if (!form.value.companyName.trim() || !form.value.jobTitle.trim() || !form.value.resumeId) return
-  const app = await store.createApplication({
-    companyName: form.value.companyName.trim(),
-    jobTitle: form.value.jobTitle.trim(),
-    jobDescription: form.value.jobDescription,
-    companyInfo: form.value.companyInfo,
-    resumeId: form.value.resumeId,
-    status: form.value.status,
-    notes: form.value.notes,
-  })
-  showModal.value = false
-  router.push(`/applications/${app.id}`)
+async function submitCreate(data: Required<ApplicationInput>) {
+  creating.value = true
+  try {
+    const app = await store.createApplication(data)
+    showModal.value = false
+    router.push(`/applications/${app.id}`)
+  } catch {
+    ElMessage.error('创建投递失败，请重试')
+  } finally {
+    creating.value = false
+  }
 }
 
 function viewDetail(id: string) {
@@ -537,111 +513,13 @@ function handleDelete(id: string, companyName: string, jobTitle: string, event: 
       </section>
     </main>
 
-    <div
-      v-if="showModal"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      @click.self="closeModal"
-    >
-      <div class="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 overflow-hidden">
-        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 class="text-lg font-semibold text-gray-800">新建投递</h2>
-          <button
-            @click="closeModal"
-            class="p-1 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-          >
-            <X class="w-5 h-5" />
-          </button>
-        </div>
-
-        <div class="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1.5">公司名称 *</label>
-              <el-input
-                v-model="form.companyName"
-                placeholder="例如：字节跳动"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1.5">职位名称 *</label>
-              <el-input
-                v-model="form.jobTitle"
-                placeholder="例如：前端工程师"
-              />
-            </div>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1.5">选择简历 *</label>
-            <el-select v-model="form.resumeId" placeholder="请选择简历" class="w-full">
-              <el-option
-                v-for="r in resumeStore.resumes"
-                :key="r.id"
-                :value="r.id"
-                :label="r.title"
-              />
-            </el-select>
-            <p v-if="resumeStore.resumes.length === 0" class="text-xs text-amber-600 mt-1">还没有简历，请先去简历管理创建</p>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1.5">投递状态 *</label>
-            <el-select v-model="form.status" class="w-full" popper-class="status-select-dropdown">
-              <el-option
-                v-for="status in statusStore.statuses"
-                :key="status.id"
-                :value="status.id"
-                :label="status.name"
-              >
-                <div class="py-1">
-                  <div class="text-sm text-gray-700">{{ status.name }}</div>
-                  <div class="max-w-[360px] truncate text-xs text-gray-400">{{ status.description }}</div>
-                </div>
-              </el-option>
-            </el-select>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1.5">岗位描述</label>
-            <el-input
-              v-model="form.jobDescription"
-              type="textarea"
-              :rows="4"
-              placeholder="粘贴 JD 内容..."
-            />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1.5">公司信息</label>
-            <el-input
-              v-model="form.companyInfo"
-              type="textarea"
-              :rows="3"
-              placeholder="公司规模、地点、业务等..."
-            />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1.5">备注</label>
-            <el-input
-              v-model="form.notes"
-              placeholder="投递渠道、内推人等..."
-            />
-          </div>
-        </div>
-
-        <div class="flex items-center justify-end gap-2 px-6 py-4 bg-gray-50 border-t border-gray-100">
-          <button
-            @click="closeModal"
-            class="px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm font-medium hover:bg-white transition-colors"
-          >
-            取消
-          </button>
-          <button
-            @click="submitCreate"
-            :disabled="!form.companyName.trim() || !form.jobTitle.trim() || !form.resumeId"
-            class="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            创建
-          </button>
-        </div>
-      </div>
-    </div>
+    <ApplicationFormDialog
+      v-model="showModal"
+      mode="create"
+      :initial-data="createInitialData"
+      :saving="creating"
+      @submit="submitCreate"
+    />
 
     <StatusManagerDialog v-model="showStatusManager" />
   </div>

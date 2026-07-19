@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useResumeStore } from '@/stores/resume'
 import { readFile } from '@/utils/markdown'
 import { formatDate } from '@/utils/constants'
+import { useBackdropClose } from '@/composables/useBackdropClose'
 import { ElMessage, ElMessageBox } from 'element-plus/es'
 import { FileText, Plus, Eye, Trash2, Upload, X, Wand2 } from 'lucide-vue-next'
 import type { Resume } from '@/types'
@@ -55,6 +56,8 @@ function openModal() {
 function closeModal() {
   showModal.value = false
 }
+
+const createResumeBackdrop = useBackdropClose(closeModal)
 
 async function createResume() {
   const title = newTitle.value.trim()
@@ -240,7 +243,10 @@ function preview(content: string): string {
     <div
       v-if="showModal"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      @click.self="closeModal"
+      @pointerdown="createResumeBackdrop.onBackdropPointerDown"
+      @pointerup="createResumeBackdrop.onBackdropPointerUp"
+      @pointercancel="createResumeBackdrop.onBackdropPointerCancel"
+      @click="createResumeBackdrop.onBackdropClick"
     >
       <div class="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 overflow-hidden">
         <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">

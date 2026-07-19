@@ -6,11 +6,13 @@ import { useResumeStore } from '@/stores/resume'
 import { useApplicationStatusStore } from '@/stores/application-status'
 import { getStatusOption, formatDate } from '@/utils/constants'
 import { renderMarkdown } from '@/utils/markdown'
+import ApplicationFormDialog from '@/components/Application/ApplicationFormDialog.vue'
 import {
   downloadInterviewIcs,
   formatInterviewDateTime,
   fromDateTimeLocalValue,
   getCurrentInterview,
+  getInterviewForStage,
   getInterviewModeLabel,
   getInterviewStageLabel,
   hasCompleteInterview,
@@ -19,7 +21,7 @@ import {
   toDateTimeLocalValue,
 } from '@/utils/interview'
 import { ElMessage, ElMessageBox } from 'element-plus/es'
-import type { ApplicationStatus, InterviewMode, InterviewStage, Resume } from '@/types'
+import type { ApplicationInput, ApplicationStatus, InterviewMode, InterviewStage, Resume } from '@/types'
 import {
   ArrowLeft,
   Briefcase,
@@ -46,7 +48,10 @@ const statusStore = useApplicationStatusStore()
 const notesEditing = ref(false)
 const notesInput = ref('')
 const statusDropdownOpen = ref(false)
+const showEditDialog = ref(false)
+const savingApplication = ref(false)
 const interviewEditing = ref(false)
+const interviewFormBaseline = ref('')
 const interviewForm = ref({
   interviewAt: '',
   mode: 'online' as InterviewMode,
@@ -58,7 +63,15 @@ const app = computed(() => store.currentApplication)
 const activeStage = computed<InterviewStage | null>(() =>
   app.value && isInterviewStage(app.value.status) ? app.value.status : null
 )
-const activeInterview = computed(() => (app.value ? getCurrentInterview(app.value) : undefined))
+const activeInterview = computed(() =>
+  app.value && activeStage.value
+    ? getInterviewForStage(app.value, activeStage.value)
+    : undefined
+)
+const hasUnsavedInterviewChanges = computed(() =>
+  interviewEditing.value &&
+  JSON.stringify(interviewForm.value) !== interviewFormBaseline.value
+)
 const renderedJobDesc = computed(() => (app.value ? renderMarkdown(app.value.jobDescription || '') : ''))
 const relatedResume = computed<Resume | undefined>(() =>
   app.value ? resumeStore.resumes.find((r) => r.id === app.value!.resumeId) : undefined
@@ -73,12 +86,14 @@ function nowDateTimeLocal(): string {
 
 function syncInterviewForm() {
   const schedule = activeInterview.value
-  interviewForm.value = {
+  const nextForm = {
     interviewAt: toDateTimeLocalValue(schedule?.interviewAt) || nowDateTimeLocal(),
     mode: schedule?.mode || 'online',
     location: schedule?.location || '',
     interviewer: schedule?.interviewer || '',
   }
+  interviewForm.value = nextForm
+  interviewFormBaseline.value = JSON.stringify(nextForm)
 }
 
 async function loadApplicationData(id: string) {
@@ -110,11 +125,63 @@ function goBack() {
 
 async function selectStatus(status: ApplicationStatus) {
   if (!app.value) return
+  if (status === app.value.status) {
+    statusDropdownOpen.value = false
+    return
+  }
+  if (!await confirmDiscardInterviewDraft()) {
+    statusDropdownOpen.value = false
+    return
+  }
   await store.updateStatus(app.value.id, status)
   statusDropdownOpen.value = false
+  interviewEditing.value = false
   if (isInterviewStage(status)) {
     interviewEditing.value = !hasCompleteInterview(getCurrentInterview(store.currentApplication!))
     syncInterviewForm()
+  }
+}
+
+async function confirmDiscardInterviewDraft(): Promise<boolean> {
+  if (!hasUnsavedInterviewChanges.value) return true
+  try {
+    await ElMessageBox.confirm(
+      '当前面试安排有尚未保存的修改，切换状态后这些修改将被放弃。',
+      '切换投递状态',
+      {
+        confirmButtonText: '放弃修改并切换',
+        cancelButtonText: '继续编辑',
+        type: 'warning',
+      }
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function saveApplication(data: Required<ApplicationInput>) {
+  if (!app.value) return
+  if (data.status !== app.value.status && !await confirmDiscardInterviewDraft()) return
+  savingApplication.value = true
+  try {
+    const updated = await store.updateApplication(app.value.id, data)
+    if (!updated) {
+      ElMessage.error('投递记录不存在或已被删除')
+      return
+    }
+    showEditDialog.value = false
+    notesEditing.value = false
+    interviewEditing.value = false
+    ElMessage.success('投递信息已保存')
+    if (isInterviewStage(updated.status) && !hasCompleteInterview(getCurrentInterview(updated))) {
+      interviewEditing.value = true
+      syncInterviewForm()
+    }
+  } catch {
+    ElMessage.error('保存投递信息失败，请重试')
+  } finally {
+    savingApplication.value = false
   }
 }
 
@@ -211,6 +278,13 @@ function handleDelete() {
           <p class="text-sm text-gray-500 truncate">{{ app.jobTitle }}</p>
         </div>
       </div>
+      <button
+        @click="showEditDialog = true"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
+      >
+        <Pencil class="w-4 h-4" />
+        编辑投递
+      </button>
       <div class="relative">
         <button
           @click="statusDropdownOpen = !statusDropdownOpen"
@@ -501,5 +575,13 @@ function handleDelete() {
         </section>
       </aside>
     </main>
+
+    <ApplicationFormDialog
+      v-model="showEditDialog"
+      mode="edit"
+      :application="app"
+      :saving="savingApplication"
+      @submit="saveApplication"
+    />
   </div>
 </template>

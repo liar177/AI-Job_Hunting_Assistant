@@ -23,6 +23,16 @@ fn main() {
                 .expect("failed to resolve app data directory");
             let database = db::Database::new(&app_dir).expect("failed to initialize database");
             app.manage(database);
+
+            // The frontend normally reveals the window after its first rendered frame.
+            // Keep a timeout fallback so a frontend error cannot leave it hidden forever.
+            if let Some(window) = app.get_webview_window("main") {
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    let _ = window.show();
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
