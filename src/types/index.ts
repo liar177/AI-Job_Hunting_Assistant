@@ -167,6 +167,12 @@ export interface GenerateRequest extends AnalyzeRequest {
   optimizationBasis?: OptimizationBasis
 }
 
+// 自我介绍生成请求类型。该流程独立于简历生成，优化依据仅作为可选上下文。
+export interface SelfIntroductionRequest extends AnalyzeRequest {
+  optimizationBasis?: OptimizationBasis
+  direction?: string
+}
+
 // AI生成响应类型
 export interface GenerateResponse {
   success: boolean

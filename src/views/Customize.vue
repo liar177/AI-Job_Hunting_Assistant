@@ -8,17 +8,23 @@ import type { Resume } from '@/types'
 import { db } from '@/utils/db-adapter'
 import { showError, showSuccess } from '@/utils/message'
 import { downloadMarkdown, downloadText, renderMarkdown } from '@/utils/markdown'
+import {
+  cleanSelfIntroductionContent,
+  formatSelfIntroductionDuration,
+} from '@/utils/self-introduction'
 import { ArrowDown,ArrowUp } from '@element-plus/icons-vue'
 import {
   AlertCircle,
   AlertTriangle,
   Briefcase,
   CheckCircle2,
+  Clipboard,
   Eye,
   FileDown,
   FileText,
   ListTodo,
   Loader2,
+  Mic2,
   RefreshCw,
   RotateCcw,
   Save,
@@ -47,9 +53,16 @@ const {
   customizeBasisStale: basisStale,
   customizeGeneratedContent: generatedContent,
   customizeErrorMsg: errorMsg,
+  customizeSelfIntroductionDirection: selfIntroductionDirection,
+  customizeGeneratedSelfIntroduction: generatedSelfIntroduction,
+  customizeIntroductionError: introductionError,
+  customizeIntroductionStale: introductionStale,
+  customizeIntroductionUsedBasis: introductionUsedBasis,
   customizeSavedSuccess: savedSuccess,
   customizeSavedResumeId: savedResumeId,
   customizeActiveTab: activeTab,
+  customizeIntroductionActiveTab: introductionActiveTab,
+  customizeActiveResult: activeResult,
   customizeShowApiKeyWarning: showApiKeyWarning,
   customizeExpandedBasisSections: expandedBasisSections,
 } = storeToRefs(aiStore)
@@ -65,9 +78,22 @@ const canWork = computed(() =>
   !!jobDescription.value.trim() &&
   hasApiKey.value
 )
-const isBusy = computed(() => aiStore.analyzing || aiStore.generating)
+const isBusy = computed(() =>
+  aiStore.analyzing || aiStore.generating || aiStore.generatingIntroduction
+)
 const renderedPreview = computed(() => renderMarkdown(generatedContent.value))
 const fitScoreWidth = computed(() => `${optimizationBasis.value?.fitScore || 0}%`)
+const activeResultLength = computed(() =>
+  activeResult.value === 'resume'
+    ? generatedContent.value.length
+    : generatedSelfIntroduction.value.length
+)
+const introductionDuration = computed(() =>
+  formatSelfIntroductionDuration(generatedSelfIntroduction.value)
+)
+const introductionDirectionStatus = computed(() =>
+  selfIntroductionDirection.value.trim() ? '自定义方向' : '默认方向'
+)
 const generationLoadingText = computed(() =>
   optimizationBasis.value
     ? 'AI 正在根据优化依据生成简历...'
@@ -171,6 +197,10 @@ watch(selectedResumeId, () => {
   basisStale.value = false
   expandedBasisSections.value = new Set()
   generatedContent.value = ''
+  generatedSelfIntroduction.value = ''
+  introductionError.value = ''
+  introductionStale.value = false
+  introductionUsedBasis.value = false
   savedSuccess.value = false
   savedResumeId.value = ''
 })
@@ -183,6 +213,15 @@ watch([companyName, jobTitle, jobDescription, companyInfo], () => {
     generatedContent.value = ''
     savedSuccess.value = false
     savedResumeId.value = ''
+  }
+  if (generatedSelfIntroduction.value) {
+    introductionStale.value = true
+  }
+})
+
+watch(selfIntroductionDirection, () => {
+  if (generatedSelfIntroduction.value) {
+    introductionStale.value = true
   }
 })
 
@@ -234,10 +273,46 @@ async function handleAnalyze() {
     optimizationBasis.value = result.data
     basisStale.value = false
     expandedBasisSections.value = new Set()
+    if (generatedSelfIntroduction.value) {
+      introductionStale.value = true
+    }
   } else {
     optimizationBasis.value = null
     expandedBasisSections.value = new Set()
     analysisError.value = result.error || '分析失败'
+  }
+}
+
+async function handleGenerateIntroduction() {
+  if (!canWork.value || !selectedResume.value) return
+
+  introductionError.value = ''
+  generatedSelfIntroduction.value = ''
+  activeResult.value = 'introduction'
+  introductionActiveTab.value = 'preview'
+
+  const usableBasis = optimizationBasis.value && !basisStale.value
+    ? optimizationBasis.value
+    : undefined
+
+  const result = await aiStore.generateIntroduction({
+    resumeId: selectedResume.value.id,
+    resumeContent: selectedResume.value.content,
+    companyName: companyName.value,
+    jobTitle: jobTitle.value,
+    jobDescription: jobDescription.value,
+    companyInfo: companyInfo.value,
+    optimizationBasis: usableBasis,
+    direction: selfIntroductionDirection.value,
+    rag: usableBasis?.rag,
+  })
+
+  if (result.success) {
+    generatedSelfIntroduction.value = cleanSelfIntroductionContent(result.content)
+    introductionUsedBasis.value = !!usableBasis
+    introductionStale.value = false
+  } else {
+    introductionError.value = result.error || '自我介绍生成失败'
   }
 }
 
@@ -248,6 +323,7 @@ async function handleGenerate(useBasis = true) {
   savedSuccess.value = false
   savedResumeId.value = ''
   activeTab.value = 'preview'
+  activeResult.value = 'resume'
 
   const result = await aiStore.generate({
     resumeContent: selectedResume.value.content,
@@ -294,6 +370,39 @@ function updateGeneratedContent(value: string) {
   savedResumeId.value = ''
 }
 
+function updateSelfIntroduction(value: string) {
+  generatedSelfIntroduction.value = value
+  introductionStale.value = false
+}
+
+function resetSelfIntroductionDirection() {
+  selfIntroductionDirection.value = ''
+}
+
+async function copySelfIntroduction() {
+  if (!generatedSelfIntroduction.value) return
+  try {
+    await navigator.clipboard.writeText(generatedSelfIntroduction.value)
+    showSuccess('自我介绍已复制')
+  } catch {
+    showError('复制失败，请在编辑文本中手动复制')
+  }
+}
+
+async function exportSelfIntroduction() {
+  if (!generatedSelfIntroduction.value) return
+  try {
+    const savedPath = await downloadText(
+      generatedSelfIntroduction.value,
+      `${companyName.value}-${jobTitle.value}-自我介绍.txt`,
+    )
+    if (savedPath === null) return
+    showSuccess(savedPath ? `自我介绍已导出：${savedPath}` : '自我介绍已开始下载')
+  } catch (error) {
+    showError(error instanceof Error ? error.message : '自我介绍导出失败')
+  }
+}
+
 async function exportMd() {
   if (!generatedContent.value) return
   try {
@@ -323,7 +432,7 @@ async function exportTxt() {
       <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 class="text-2xl font-semibold text-primary">简历定制</h1>
-          <p class="text-sm text-gray-500 mt-1">选择简历、填写岗位信息，先分析优化依据，也可以直接生成定向简历</p>
+          <p class="text-sm text-gray-500 mt-1">选择简历、填写岗位信息，可独立分析依据、生成自我介绍或定向简历</p>
         </div>
         <button
           type="button"
@@ -350,7 +459,7 @@ async function exportTxt() {
               <AlertCircle class="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
               <div class="min-w-0 flex-1">
                 <p class="text-sm font-medium text-amber-800">请先配置 AI API Key</p>
-                <p class="mt-1 text-xs leading-5 text-amber-700">未配置时无法生成定向简历，可先完成左侧信息填写。</p>
+                <p class="mt-1 text-xs leading-5 text-amber-700">未配置时无法使用 AI 分析、生成自我介绍或定向简历，可先完成左侧信息填写。</p>
               </div>
               <button
                 type="button"
@@ -442,6 +551,39 @@ async function exportTxt() {
                 :rows="4"
                 placeholder="公司规模、地点、业务、团队特点等..."
               />
+            </div>
+          </section>
+
+          <section class="space-y-3 rounded-lg border border-gray-100 bg-white p-5">
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-2 text-sm font-medium text-gray-800">
+                <Mic2 class="h-4 w-4 text-primary" />
+                自我介绍优化方向（可选）
+              </div>
+              <span class="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                {{ introductionDirectionStatus }}
+              </span>
+            </div>
+            <el-input
+              v-model="selfIntroductionDirection"
+              type="textarea"
+              :rows="3"
+              maxlength="500"
+              show-word-limit
+              placeholder="可补充你希望重点突出或弱化的内容..."
+            />
+            <div class="flex items-start justify-between gap-3 text-xs leading-5 text-gray-500">
+              <p>
+                不填写将使用默认方向：简单带过其他内容，重点讲与岗位高度匹配且有深度的工作或项目经历。
+              </p>
+              <button
+                v-if="selfIntroductionDirection"
+                type="button"
+                class="shrink-0 font-medium text-primary hover:text-primary-700"
+                @click="resetSelfIntroductionDirection"
+              >
+                恢复默认
+              </button>
             </div>
           </section>
 
@@ -580,7 +722,7 @@ async function exportTxt() {
                       <span class="inline-flex items-center justify-start rounded-lg" >
                         另有 {{ section.items.length - 2 }} 条建议
                       </span>
-                     <el-button  link type="" text="plain" style="color: inherit;" @click="toggleBasisSection(section.title)" >
+                     <el-button link style="color: inherit;" @click="toggleBasisSection(section.title)">
                         <template #icon>
                           <el-icon>
                             <component :is="isBasisSectionExpanded(section.title) ? ArrowUp : ArrowDown"  />
@@ -631,112 +773,255 @@ async function exportTxt() {
             </div>
             </div>
 
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:shrink-0">
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:shrink-0">
               <button
                 type="button"
                 :disabled="isBusy || !canWork"
-                class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                class="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200 px-1.5 py-2.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                 @click="handleAnalyze"
               >
-                <Loader2 v-if="aiStore.analyzing" class="h-4 w-4 animate-spin" />
-                <RefreshCw v-else-if="optimizationBasis || analysisError" class="h-4 w-4" />
-                <Sparkles v-else class="h-4 w-4" />
+                <Loader2 v-if="aiStore.analyzing" class="h-3.5 w-3.5 animate-spin" />
+                <RefreshCw v-else-if="optimizationBasis || analysisError" class="h-3.5 w-3.5" />
+                <Sparkles v-else class="h-3.5 w-3.5" />
                 {{ aiStore.analyzing ? '分析中...' : (optimizationBasis || analysisError ? '重新分析' : '分析优化依据') }}
               </button>
 
               <button
                 type="button"
                 :disabled="isBusy || !canWork"
-                class="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
+                class="inline-flex items-center justify-center gap-1 rounded-lg border border-accent px-1.5 py-2.5 text-xs font-medium text-accent-dark transition-colors hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
+                @click="handleGenerateIntroduction"
+              >
+                <Loader2 v-if="aiStore.generatingIntroduction" class="h-3.5 w-3.5 animate-spin" />
+                <Mic2 v-else class="h-3.5 w-3.5" />
+                {{ aiStore.generatingIntroduction ? '生成中...' : '生成自我介绍' }}
+              </button>
+
+              <button
+                type="button"
+                :disabled="isBusy || !canWork"
+                class="inline-flex items-center justify-center gap-1 rounded-lg bg-accent px-1.5 py-2.5 text-xs font-medium text-white transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
                 @click="handleGenerate(!!optimizationBasis)"
               >
-                <Loader2 v-if="aiStore.generating" class="h-4 w-4 animate-spin" />
-                <Sparkles v-else class="h-4 w-4" />
-                <span v-if="aiStore.generating">生成中...</span>
-                <span v-else-if="optimizationBasis">基于依据生成简历</span>
-                <span v-else-if="analysisError">跳过分析直接生成</span>
-                <span v-else>{{ generatedContent ? '重新生成简历' : '直接生成简历' }}</span>
+                <Loader2 v-if="aiStore.generating" class="h-3.5 w-3.5 animate-spin" />
+                <Sparkles v-else class="h-3.5 w-3.5" />
+                {{ aiStore.generating ? '生成中...' : '生成定制简历' }}
               </button>
             </div>
           </section>
         </aside>
 
         <section class="flex min-h-[560px] flex-1 flex-col overflow-hidden rounded-lg border border-gray-100 bg-white lg:h-full lg:min-h-0">
-          <div class="flex flex-col gap-3 border-b border-gray-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex flex-wrap items-center gap-2 border-b border-gray-100 px-4 py-3">
             <div class="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
               <button
                 type="button"
                 :class="[
                   'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                  activeTab === 'preview' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-800',
+                  activeResult === 'resume' ? 'bg-primary text-white shadow-sm' : 'text-gray-500 hover:text-gray-800',
                 ]"
-                @click="activeTab = 'preview'"
+                @click="activeResult = 'resume'"
               >
-                <Eye class="h-4 w-4" />
-                预览
+                <FileText class="h-4 w-4" />
+                优化简历
               </button>
               <button
                 type="button"
                 :class="[
                   'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                  activeTab === 'source' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-800',
+                  activeResult === 'introduction' ? 'bg-primary text-white shadow-sm' : 'text-gray-500 hover:text-gray-800',
                 ]"
-                @click="activeTab = 'source'"
+                @click="activeResult = 'introduction'"
               >
-                <FileText class="h-4 w-4" />
-                Markdown 源码
+                <Mic2 class="h-4 w-4" />
+                自我介绍
               </button>
             </div>
-            <span class="text-xs text-gray-400">{{ generatedContent.length }} 字符</span>
+
+            <div class="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
+              <template v-if="activeResult === 'resume'">
+                <button
+                  type="button"
+                  :class="[
+                    'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                    activeTab === 'preview' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-800',
+                  ]"
+                  @click="activeTab = 'preview'"
+                >
+                  <Eye class="h-4 w-4" />
+                  预览
+                </button>
+                <button
+                  type="button"
+                  :class="[
+                    'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                    activeTab === 'source' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-800',
+                  ]"
+                  @click="activeTab = 'source'"
+                >
+                  <FileText class="h-4 w-4" />
+                  Markdown 源码
+                </button>
+              </template>
+              <template v-else>
+                <button
+                  type="button"
+                  :class="[
+                    'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                    introductionActiveTab === 'preview' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-800',
+                  ]"
+                  @click="introductionActiveTab = 'preview'"
+                >
+                  <Eye class="h-4 w-4" />
+                  阅读稿
+                </button>
+                <button
+                  type="button"
+                  :class="[
+                    'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                    introductionActiveTab === 'source' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-800',
+                  ]"
+                  @click="introductionActiveTab = 'source'"
+                >
+                  <FileText class="h-4 w-4" />
+                  编辑文本
+                </button>
+              </template>
+            </div>
+
+            <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
+              <template v-if="activeResult === 'introduction' && generatedSelfIntroduction">
+                <span
+                  :class="[
+                    'rounded-full px-2 py-0.5 text-[11px] font-medium',
+                    introductionStale ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700',
+                  ]"
+                >
+                  {{ introductionStale ? '输入已变化' : (introductionUsedBasis ? '已参考优化依据' : '未使用优化依据') }}
+                </span>
+                <span class="text-xs text-gray-400">
+                  {{ introductionDuration }} · {{ generatedSelfIntroduction.length }} 字
+                </span>
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                  @click="copySelfIntroduction"
+                >
+                  <Clipboard class="h-3.5 w-3.5" />
+                  复制
+                </button>
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                  @click="exportSelfIntroduction"
+                >
+                  <FileDown class="h-3.5 w-3.5" />
+                  导出 TXT
+                </button>
+              </template>
+              <span v-else class="text-xs text-gray-400">{{ activeResultLength }} 字符</span>
+            </div>
           </div>
 
           <div class="min-h-0 flex-1 overflow-auto">
-            <div v-if="aiStore.generating" class="flex min-h-full flex-col items-center justify-center px-6 py-16 text-center">
-              <Loader2 class="mb-4 h-12 w-12 animate-spin text-accent" />
-              <p class="text-sm font-medium text-gray-700">{{ generationLoadingText }}</p>
-              <p class="mt-1 text-xs text-gray-400">这可能需要几秒钟，请耐心等待</p>
-            </div>
+            <template v-if="activeResult === 'resume'">
+              <div v-if="aiStore.generating" class="flex min-h-full flex-col items-center justify-center px-6 py-16 text-center">
+                <Loader2 class="mb-4 h-12 w-12 animate-spin text-accent" />
+                <p class="text-sm font-medium text-gray-700">{{ generationLoadingText }}</p>
+                <p class="mt-1 text-xs text-gray-400">这可能需要几秒钟，请耐心等待</p>
+              </div>
 
-            <div v-else-if="errorMsg" class="p-6">
-              <div class="rounded-lg border border-red-200 bg-red-50 p-5">
-                <div class="mb-2 flex items-center gap-2 text-red-700">
-                  <AlertCircle class="h-5 w-5" />
-                  <span class="font-medium">生成失败</span>
+              <div v-else-if="errorMsg" class="p-6">
+                <div class="rounded-lg border border-red-200 bg-red-50 p-5">
+                  <div class="mb-2 flex items-center gap-2 text-red-700">
+                    <AlertCircle class="h-5 w-5" />
+                    <span class="font-medium">简历生成失败</span>
+                  </div>
+                  <p class="whitespace-pre-wrap break-words text-sm leading-6 text-red-600">{{ errorMsg }}</p>
+                  <button
+                    type="button"
+                    :disabled="!canWork"
+                    class="mt-4 inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    @click="handleGenerate(!!optimizationBasis)"
+                  >
+                    重试
+                  </button>
                 </div>
-                <p class="whitespace-pre-wrap break-words text-sm leading-6 text-red-600">{{ errorMsg }}</p>
-                <button
-                  type="button"
-                  :disabled="!canWork"
-                  class="mt-4 inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  @click="handleGenerate(!!optimizationBasis)"
-                >
-                  重试
-                </button>
               </div>
-            </div>
 
-            <div v-else-if="generatedContent" class="min-h-full">
-              <div
-                v-if="activeTab === 'preview'"
-                class="prose-resume min-h-full max-w-none px-6 py-6 sm:px-8 lg:px-10"
-                v-html="renderedPreview"
-              ></div>
-              <textarea
-                v-else
-                :value="generatedContent"
-                class="h-full min-h-[520px] w-full resize-none border-0 p-5 font-mono text-sm leading-6 text-gray-800 focus:outline-none focus:ring-0"
-                spellcheck="false"
-                @input="updateGeneratedContent(($event.target as HTMLTextAreaElement).value)"
-              ></textarea>
-            </div>
-
-            <div v-else class="flex min-h-full flex-col items-center justify-center px-6 py-16 text-center">
-              <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-50">
-                <FileText class="h-8 w-8 text-primary" />
+              <div v-else-if="generatedContent" class="min-h-full">
+                <div
+                  v-if="activeTab === 'preview'"
+                  class="prose-resume min-h-full max-w-none px-6 py-6 sm:px-8 lg:px-10"
+                  v-html="renderedPreview"
+                ></div>
+                <textarea
+                  v-else
+                  :value="generatedContent"
+                  class="h-full min-h-[520px] w-full resize-none border-0 p-5 font-mono text-sm leading-6 text-gray-800 focus:outline-none focus:ring-0"
+                  spellcheck="false"
+                  @input="updateGeneratedContent(($event.target as HTMLTextAreaElement).value)"
+                ></textarea>
               </div>
-              <p class="text-base font-medium text-gray-800">填写左侧信息后生成定制简历</p>
-              <p class="mt-2 max-w-sm text-sm leading-6 text-gray-500">可以先分析优化依据，也可以直接生成。生成完成后，可在这里预览定制简历或微调 Markdown 源码。</p>
-            </div>
+
+              <div v-else class="flex min-h-full flex-col items-center justify-center px-6 py-16 text-center">
+                <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-50">
+                  <FileText class="h-8 w-8 text-primary" />
+                </div>
+                <p class="text-base font-medium text-gray-800">填写左侧信息后生成定制简历</p>
+                <p class="mt-2 max-w-sm text-sm leading-6 text-gray-500">可以先分析优化依据，也可以直接生成。生成完成后，可在这里预览定制简历或微调 Markdown 源码。</p>
+              </div>
+            </template>
+
+            <template v-else>
+              <div v-if="aiStore.generatingIntroduction" class="flex min-h-full flex-col items-center justify-center px-6 py-16 text-center">
+                <Loader2 class="mb-4 h-12 w-12 animate-spin text-accent" />
+                <p class="text-sm font-medium text-gray-700">AI 正在生成两分钟内的岗位定向自我介绍...</p>
+                <p class="mt-1 text-xs text-gray-400">这是一次独立生成，不会改动已生成的简历</p>
+              </div>
+
+              <div v-else-if="introductionError" class="p-6">
+                <div class="rounded-lg border border-red-200 bg-red-50 p-5">
+                  <div class="mb-2 flex items-center gap-2 text-red-700">
+                    <AlertCircle class="h-5 w-5" />
+                    <span class="font-medium">自我介绍生成失败</span>
+                  </div>
+                  <p class="whitespace-pre-wrap break-words text-sm leading-6 text-red-600">{{ introductionError }}</p>
+                  <button
+                    type="button"
+                    :disabled="!canWork"
+                    class="mt-4 inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    @click="handleGenerateIntroduction"
+                  >
+                    重试
+                  </button>
+                </div>
+              </div>
+
+              <div v-else-if="generatedSelfIntroduction" class="min-h-full">
+                <div
+                  v-if="introductionActiveTab === 'preview'"
+                  class="mx-auto min-h-full max-w-3xl whitespace-pre-wrap px-6 py-8 text-[15px] leading-8 text-gray-800 sm:px-10 lg:py-10"
+                >{{ generatedSelfIntroduction }}</div>
+                <textarea
+                  v-else
+                  :value="generatedSelfIntroduction"
+                  class="h-full min-h-[520px] w-full resize-none border-0 p-6 text-[15px] leading-8 text-gray-800 focus:outline-none focus:ring-0 sm:p-8"
+                  spellcheck="false"
+                  @input="updateSelfIntroduction(($event.target as HTMLTextAreaElement).value)"
+                ></textarea>
+              </div>
+
+              <div v-else class="flex min-h-full flex-col items-center justify-center px-6 py-16 text-center">
+                <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-50">
+                  <Mic2 class="h-8 w-8 text-primary" />
+                </div>
+                <p class="text-base font-medium text-gray-800">独立生成岗位定向自我介绍</p>
+                <p class="mt-2 max-w-md text-sm leading-6 text-gray-500">
+                  优化依据不是必需项；有依据时作为可选参考，没有时直接根据已有简历和岗位信息生成。
+                </p>
+              </div>
+            </template>
           </div>
         </section>
       </div>

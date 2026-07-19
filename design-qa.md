@@ -1,40 +1,47 @@
-# 投递状态设置 Design QA
+# 简历定制独立自我介绍工作流 Design QA
 
-- Source visual truth: `C:\Users\1\.codex\generated_images\019f5f9b-d442-7c03-850b-af5874414e6d\exec-fa76e01f-cd43-460b-bf02-3858362e88a7.png`
-- Implementation screenshot: `D:\study\工作简历AI助手\artifacts\status-manager-implementation.png`
-- Full-view comparison evidence: `D:\study\工作简历AI助手\artifacts\status-manager-comparison.png`
-- Viewport: 1280 × 720（内置浏览器固定可视区域）
-- State: 投递状态设置打开，系统状态默认只展示一条，编辑自定义状态 Dialog 打开，紫色已选，需要面试安排已开启。
+- Source visual truth: `D:\study\工作简历AI助手\artifacts\self-introduction-source.png`
+- Implementation screenshot: `D:\study\工作简历AI助手\artifacts\self-introduction-implementation.png`
+- Viewport: 1440 × 1024
+- State: 已选择简历并填写岗位信息和自定义方向；优化依据分析完成；自我介绍通过独立 API 调用生成并处于“阅读稿”模式。
+- Full-view comparison evidence: source and implementation were emitted together in the same browser comparison input at the target desktop viewport.
+- Focused region comparison evidence: no separate crop was required because the three-button action row and the single-row result switches are fully legible in the 1440 × 1024 implementation capture; button DOM measurements were also checked after the visual fix.
 
 **Findings**
 
 - No actionable P0/P1/P2 differences remain.
-- 用户在视觉稿后补充“普通 Dialog 必须水平、垂直居中”，实现以该明确要求覆盖原图中略偏移的二级 Dialog。实测管理 Dialog 和编辑 Dialog 中心点均为 `(640, 360)`，与视口中心完全一致。
-- 字体与排版：沿用项目现有 Inter / Noto Sans SC 字体栈；标题、标签、说明文字和输入内容的字号、字重与现有应用一致，无截断或异常换行。
-- 间距与布局：管理 Dialog 宽 768px，编辑 Dialog 宽 470px；页头、表单、色板、预览及底部操作区层级清晰。内容过高时由内部区域滚动，弹窗仍保持居中。
-- 颜色与视觉令牌：沿用现有深蓝主色和浅灰边框；8 个固定状态色均提供浅色标签映射，紫色选中态、勾选图标及标签预览与视觉稿一致。
-- 图片与图标：此界面没有业务图片资产；所有操作图标使用项目既有 `lucide-vue-next`，没有占位图或手绘 SVG。
-- 文案：系统状态折叠、状态名称、状态描述、面试安排开关、状态颜色和操作文案均与定稿一致。
+- Fonts and typography: implementation keeps the existing system/PingFang/Segoe font stack and matches the selected concept’s compact product typography. Long-form introduction text uses a restrained 15px size and 32px line height for reading comfort.
+- Spacing and layout rhythm: the existing two-column layout, independent column scrolling, card radii, borders, and section gaps are preserved. The optional introduction-direction section sits between job information and the complete optimization-basis section as selected.
+- Colors and visual tokens: existing navy `#1e3a5f`, mint `#00d4aa`, gray surfaces, warning colors, and disabled states are reused without introducing new visual tokens.
+- Image quality and asset fidelity: this screen has no raster business imagery. Icons use the project’s existing `lucide-vue-next` family; no placeholder, CSS art, inline SVG, or custom image substitute was added.
+- Copy and content: the interface clearly states the default direction, independent generation behavior, optional-basis status, estimated speaking duration, and stale-result state.
+- Interaction fidelity: the left action row contains three independent operations in the required order. “优化简历 / 自我介绍” and the contextual “预览 / Markdown 源码” or “阅读稿 / 编辑文本” switches occupy the same toolbar row.
+- Accessibility and states: buttons retain semantic button elements, disabled states, focus behavior, labels, and visible loading/error/empty/success states. The 1024px desktop viewport has no horizontal overflow.
 
 **Open Questions**
 
-- None.
+- The application shell remains desktop-first at phone widths; the existing fixed sidebar makes the 390px layout cramped. This predates the feature and is outside the selected desktop visual target. The new feature does not introduce horizontal overflow.
 
 **Implementation Checklist**
 
-- [x] 状态管理与编辑 Dialog 水平、垂直居中。
-- [x] 系统状态默认展示 1 条，其余 8 条折叠。
-- [x] 自定义状态名称、描述、面试安排和固定色板。
-- [x] 状态标签实时预览。
-- [x] 状态在筛选、投递选择器、详情和面试安排中同步生效。
-- [x] 使用中的自定义状态禁止删除。
+- [x] Independent optimization-basis, self-introduction, and resume API actions.
+- [x] Optional optimization basis injected only when current and available.
+- [x] Empty direction uses the explicit default direction.
+- [x] Dedicated introduction reading/editing modes, copy, TXT export, length, and duration.
+- [x] Resume preview/Markdown behavior and save/application actions preserved.
+- [x] Complete optimization-basis display and expansion behavior preserved.
+- [x] Separate stale/error/loading/result state and one-click reset coverage.
+- [x] Browser console checked with no errors or warnings in the final QA tab.
 
 **Comparison History**
 
-- No P0/P1/P2 visual iteration was required. Browser inspection found a development-only Vue attribute warning caused by the Teleport root; `inheritAttrs: false` was added and the rendered UI remained unchanged.
+1. Initial comparison found a P2 issue: the three left action labels wrapped to two lines in the narrower rendered left column, while the selected visual kept them on one line.
+2. Fix: reduced only that action row’s font size, icon size, padding, and gap while preserving labels and hierarchy.
+3. Post-fix evidence: each action button reports equal `clientHeight` and `scrollHeight` with no overflow; the revised 1440 × 1024 capture shows all three labels on one line.
+4. A pre-existing Element Plus prop warning in the optimization-basis expansion control was removed; the final isolated QA tab reports no console warnings or errors.
 
 **Follow-up Polish**
 
-- P3: 对照图中的自定义状态数量不同（视觉稿为示例数据 2 条，实现截图为隔离测试数据 1 条），不影响布局或交互验证。
+- P3: the generated visual uses richer example resume content than the isolated mock response, so the visible text density differs while the layout and interaction hierarchy remain aligned.
 
 final result: passed

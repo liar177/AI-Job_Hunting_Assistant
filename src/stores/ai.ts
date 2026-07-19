@@ -18,21 +18,30 @@ import type {
   GenerateRequest,
   GenerateResponse,
   OptimizationBasis,
+  SelfIntroductionRequest,
 } from '@/types'
 import { DEFAULT_AI_CONFIG } from '@/utils/db'
 import { db } from '@/utils/db-adapter'
-import { analyzeResumeOptimizationBasis, generateResume, testAIConnection } from '@/utils/ai'
+import {
+  analyzeResumeOptimizationBasis,
+  generateResume,
+  generateSelfIntroduction,
+  testAIConnection,
+} from '@/utils/ai'
 
 type CustomizeActiveTab = 'preview' | 'source'
+type CustomizeActiveResult = 'resume' | 'introduction'
 
 export const useAIStore = defineStore('ai', () => {
   // ===== 全局 AI 配置 =====
   const config = ref<AIConfig>(DEFAULT_AI_CONFIG)
   const analyzing = ref(false)
   const generating = ref(false)
+  const generatingIntroduction = ref(false)
   const optimizationBasis = ref<OptimizationBasis | null>(null)
   const lastAnalysis = ref<AnalyzeResponse | null>(null)
   const lastResult = ref<GenerateResponse | null>(null)
+  const lastIntroductionResult = ref<GenerateResponse | null>(null)
 
   // ===== 简历定制页状态 =====
   // 定制页有大量表单字段，切换 Tab 会导致组件销毁，
@@ -56,9 +65,16 @@ export const useAIStore = defineStore('ai', () => {
 
   const customizeGeneratedContent = ref('')
   const customizeErrorMsg = ref('')
+  const customizeSelfIntroductionDirection = ref('')
+  const customizeGeneratedSelfIntroduction = ref('')
+  const customizeIntroductionError = ref('')
+  const customizeIntroductionStale = ref(false)
+  const customizeIntroductionUsedBasis = ref(false)
   const customizeSavedSuccess = ref(false)
   const customizeSavedResumeId = ref('')
   const customizeActiveTab = ref<CustomizeActiveTab>('preview')
+  const customizeIntroductionActiveTab = ref<CustomizeActiveTab>('preview')
+  const customizeActiveResult = ref<CustomizeActiveResult>('resume')
   const customizeShowApiKeyWarning = ref(true)
 
   /** 优化依据各部分的展开/折叠状态（Set 保证切换 Tab 后不丢失） */
@@ -111,6 +127,20 @@ export const useAIStore = defineStore('ai', () => {
     }
   }
 
+  /** 独立生成两分钟内的岗位定向自我介绍。 */
+  async function generateIntroduction(
+    request: SelfIntroductionRequest,
+  ): Promise<GenerateResponse> {
+    generatingIntroduction.value = true
+    try {
+      const result = await generateSelfIntroduction(request)
+      lastIntroductionResult.value = result
+      return result
+    } finally {
+      generatingIntroduction.value = false
+    }
+  }
+
   async function testConnection(): Promise<boolean> {
     return testAIConnection(config.value)
   }
@@ -127,9 +157,16 @@ export const useAIStore = defineStore('ai', () => {
     customizeBasisStale.value = false
     customizeGeneratedContent.value = ''
     customizeErrorMsg.value = ''
+    customizeSelfIntroductionDirection.value = ''
+    customizeGeneratedSelfIntroduction.value = ''
+    customizeIntroductionError.value = ''
+    customizeIntroductionStale.value = false
+    customizeIntroductionUsedBasis.value = false
     customizeSavedSuccess.value = false
     customizeSavedResumeId.value = ''
     customizeActiveTab.value = 'preview'
+    customizeIntroductionActiveTab.value = 'preview'
+    customizeActiveResult.value = 'resume'
     customizeShowApiKeyWarning.value = true
     customizeExpandedBasisSections.value = new Set()
   }
@@ -138,9 +175,11 @@ export const useAIStore = defineStore('ai', () => {
     config,
     analyzing,
     generating,
+    generatingIntroduction,
     optimizationBasis,
     lastAnalysis,
     lastResult,
+    lastIntroductionResult,
     customizeSelectedResumeId,
     customizeCompanyName,
     customizeJobTitle,
@@ -151,15 +190,23 @@ export const useAIStore = defineStore('ai', () => {
     customizeBasisStale,
     customizeGeneratedContent,
     customizeErrorMsg,
+    customizeSelfIntroductionDirection,
+    customizeGeneratedSelfIntroduction,
+    customizeIntroductionError,
+    customizeIntroductionStale,
+    customizeIntroductionUsedBasis,
     customizeSavedSuccess,
     customizeSavedResumeId,
     customizeActiveTab,
+    customizeIntroductionActiveTab,
+    customizeActiveResult,
     customizeShowApiKeyWarning,
     customizeExpandedBasisSections,
     loadConfig,
     saveConfig,
     analyze,
     generate,
+    generateIntroduction,
     testConnection,
     resetCustomizeDraft,
   }

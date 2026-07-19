@@ -16,9 +16,11 @@ import type {
   GenerateRequest,
   GenerateResponse,
   OptimizationBasis,
+  SelfIntroductionRequest,
 } from '@/types'
 import { db } from './db-adapter'
 import { formatRagContext } from './rag'
+import { formatSelfIntroductionDirection } from './self-introduction'
 
 /**
  * 默认优化依据 —— 当 LLM 返回的 JSON 不完整或解析失败时使用
@@ -208,9 +210,53 @@ YYYY.MM - YYYY.MM
 
 请直接输出纯Markdown格式的简历内容，不要使用代码块，直接输出内容即可，不要包含任何解释性文字。`
 
+const SELF_INTRODUCTION_PROMPT = `你是一位资深面试辅导顾问。请根据候选人的真实简历和目标岗位，生成一段适合面试开场口述的中文个人自我介绍。
+
+## 输入信息
+
+### 原始简历
+{resumeContent}
+
+### 目标公司
+{companyName}
+
+### 目标职位
+{jobTitle}
+
+### 目标岗位描述
+{jobDescription}
+
+### 目标公司信息
+{companyInfo}
+
+### 可选优化依据
+{optimizationBasis}
+
+### 自我介绍优化方向
+{selfIntroductionDirection}
+
+## 生成要求
+1. 自我介绍预计口述时长必须控制在两分钟以内，建议 280-400 个中文字符。
+2. 开头简要说明职业定位、相关年限和核心能力，其他背景简单带过。
+3. 主体重点讲一个与目标岗位高度匹配且有深度的工作或项目经历，说明背景、本人职责、关键行动、结果以及与岗位的关联。
+4. 结尾自然总结岗位匹配点和求职意愿，不要使用空泛口号。
+5. 只使用原始简历中明确存在的事实和量化数据；禁止编造公司、项目、职责、技能熟练度、业绩指标、学历或个人信息。
+6. 优化依据仅是可选参考：提供时可用于内容取舍，未提供时直接根据原始简历和岗位信息完成，不要提示用户缺少优化依据。
+7. 优先遵循用户自定义优化方向；未提供自定义方向时遵循默认方向。
+8. 语言自然、专业、适合口述，避免逐段朗读简历。
+9. 只输出自我介绍正文，不要标题、Markdown、代码块、字数说明或其他解释。`
+
 function formatOptimizationBasis(basis?: OptimizationBasis): string {
   if (!basis) {
     return '未提供优化依据。请直接根据原始简历、目标公司、目标职位和岗位描述完成简历优化。'
+  }
+
+  return JSON.stringify(basis, null, 2)
+}
+
+function formatOptionalIntroductionBasis(basis?: OptimizationBasis): string {
+  if (!basis) {
+    return '未提供优化依据。本次请仅根据原始简历、目标公司、目标职位和岗位描述生成自我介绍。'
   }
 
   return JSON.stringify(basis, null, 2)
@@ -222,18 +268,30 @@ function formatOptimizationBasis(basis?: OptimizationBasis): string {
  * 将 analyze/generate request 的字段填入 Prompt 模板的 {placeholder} 中。
  * RAG 上下文通过 formatRagContext() 格式化为 Markdown 后注入。
  */
-function fillTemplate(template: string, data: AnalyzeRequest | GenerateRequest): string {
-  return template
+function fillTemplate(
+  template: string,
+  data: AnalyzeRequest | GenerateRequest | SelfIntroductionRequest,
+): string {
+  let result = template
     .replace('{resumeContent}', data.resumeContent)
     .replace('{companyName}', data.companyName)
     .replace('{jobTitle}', data.jobTitle)
     .replace('{jobDescription}', data.jobDescription)
     .replace('{companyInfo}', data.companyInfo || '未提供')
     .replace('{ragContext}', formatRagContext(data.rag))
-    .replace(
+
+  if ('direction' in data) {
+    result = result
+      .replace('{optimizationBasis}', formatOptionalIntroductionBasis(data.optimizationBasis))
+      .replace('{selfIntroductionDirection}', formatSelfIntroductionDirection(data.direction))
+  } else {
+    result = result.replace(
       '{optimizationBasis}',
       'optimizationBasis' in data ? formatOptimizationBasis(data.optimizationBasis) : '',
     )
+  }
+
+  return result
 }
 
 /**
@@ -437,6 +495,14 @@ export async function analyzeResumeOptimizationBasis(
 export async function generateResume(request: GenerateRequest): Promise<GenerateResponse> {
   const prompt = fillTemplate(RESUME_GENERATION_PROMPT, request)
   return callChatCompletion(prompt, 0.7)
+}
+
+/** 独立生成岗位定向的两分钟内自我介绍。 */
+export async function generateSelfIntroduction(
+  request: SelfIntroductionRequest,
+): Promise<GenerateResponse> {
+  const prompt = fillTemplate(SELF_INTRODUCTION_PROMPT, request)
+  return callChatCompletion(prompt, 0.65)
 }
 
 /**
