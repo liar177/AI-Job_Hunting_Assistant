@@ -35,40 +35,218 @@ const DIMENSIONS: [(&str, &str, f32); 5] = [
     ("education", "教育背景", 0.05),
 ];
 
+/// 分块规则版本参与内容哈希；规则升级后，即使简历正文未变化也会自动重建旧索引。
+const RAG_INDEX_VERSION: &str = "2";
+
 /// 内容哈希 —— 用于增量索引判断
 ///
-/// SHA-256 对简历内容做摘要，存储在 rag_chunks.content_hash 中。
+/// SHA-256 对分块规则版本 + 简历内容做摘要，存储在 rag_chunks.content_hash 中。
 /// 检索时对比当前内容哈希 vs 已存储哈希，不同即需要重建索引。
 fn content_hash(content: &str) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(content.as_bytes());
+    hasher.update(RAG_INDEX_VERSION.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(content.replace("\r\n", "\n").as_bytes());
     format!("{:x}", hasher.finalize())
 }
 
-/// 根据标题关键词推断分块类型
-///
-/// 纯规则匹配，与 TS 端 inferChunkType 逻辑完全一致。
-/// 不使用 AI 分类，保证确定性和跨平台一致性。
-fn infer_chunk_type(title: &str) -> String {
-    if title.contains("项目") || title.contains("作品") {
-        "project".to_string()
-    } else if title.contains("工作") || title.contains("经历") || title.contains("任职") {
-        "experience".to_string()
-    } else if title.contains("技能") || title.contains("技术") || title.contains("专业") {
-        "skills".to_string()
-    } else if title.contains("优势")
-        || title.contains("总结")
-        || title.contains("简介")
-        || title.contains("自我")
-    {
-        "summary".to_string()
-    } else if title.contains("教育") || title.contains("学历") || title.contains("学校") {
-        "education".to_string()
-    } else if title.contains("求职") || title.contains("意向") {
-        "intent".to_string()
-    } else {
-        "other".to_string()
+const EXPERIENCE_ALIASES: [&str; 5] = ["工作经历", "工作经验", "任职经历", "职业经历", "实习经历"];
+const PROJECT_ALIASES: [&str; 5] = ["项目经历", "项目经验", "项目实践", "代表项目", "作品经历"];
+const SKILLS_ALIASES: [&str; 5] = ["专业技能", "技能清单", "技术能力", "技术栈", "核心技能"];
+const SUMMARY_ALIASES: [&str; 4] = ["个人优势", "自我评价", "个人总结", "个人简介"];
+const EDUCATION_ALIASES: [&str; 4] = ["教育背景", "教育经历", "学历背景", "学校经历"];
+const INTENT_ALIASES: [&str; 3] = ["求职意向", "期望职位", "职业目标"];
+
+/// 根据章节别名推断分块类型，不使用 AI 分类，保证确定性和跨平台一致性。
+fn alias_type(title: &str, decorated: bool) -> Option<String> {
+    let compact: String = title.chars().filter(|char| !char.is_whitespace()).collect();
+    let groups: [(&str, &[&str]); 6] = [
+        ("project", &PROJECT_ALIASES),
+        ("experience", &EXPERIENCE_ALIASES),
+        ("skills", &SKILLS_ALIASES),
+        ("summary", &SUMMARY_ALIASES),
+        ("education", &EDUCATION_ALIASES),
+        ("intent", &INTENT_ALIASES),
+    ];
+    groups.iter().find_map(|(chunk_type, aliases)| {
+        aliases
+            .iter()
+            .any(|alias| {
+                if decorated {
+                    compact.contains(alias)
+                } else {
+                    compact == *alias
+                }
+            })
+            .then(|| (*chunk_type).to_string())
+    })
+}
+
+fn starts_with_ordered_list_marker(text: &str) -> bool {
+    let digit_count = text
+        .chars()
+        .take_while(|char| char.is_ascii_digit())
+        .count();
+    if digit_count == 0 {
+        return false;
     }
+    let remainder: String = text.chars().skip(digit_count).collect();
+    let mut chars = remainder.chars();
+    matches!(chars.next(), Some('.' | ')' | '、'))
+        && chars
+            .next()
+            .map(|char| char.is_whitespace())
+            .unwrap_or(true)
+}
+
+/// 兼容 Markdown 1-6 级标题、粗体标题、【书名号标题】和独立成行的纯文本标题。
+fn parse_section_heading(line: &str) -> Option<(String, String)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty()
+        || trimmed.starts_with("- ")
+        || trimmed.starts_with("+ ")
+        || trimmed.starts_with("* ")
+        || starts_with_ordered_list_marker(trimmed)
+    {
+        return None;
+    }
+
+    let without_colon = trimmed
+        .trim_end_matches(|char| char == ':' || char == '：')
+        .trim();
+    let (candidate, decorated) = if without_colon.starts_with('#') {
+        let hash_count = without_colon
+            .chars()
+            .take_while(|char| *char == '#')
+            .count();
+        if !(1..=6).contains(&hash_count)
+            || !without_colon
+                .chars()
+                .nth(hash_count)
+                .map(|char| char.is_whitespace())
+                .unwrap_or(false)
+        {
+            return None;
+        }
+        (
+            without_colon[hash_count..]
+                .trim()
+                .trim_end_matches('#')
+                .trim(),
+            true,
+        )
+    } else if without_colon.starts_with("**") && without_colon.ends_with("**") {
+        (without_colon.trim_matches('*').trim(), true)
+    } else if without_colon.starts_with("__") && without_colon.ends_with("__") {
+        (without_colon.trim_matches('_').trim(), true)
+    } else if without_colon.starts_with('【') && without_colon.ends_with('】') {
+        (
+            without_colon
+                .trim_start_matches('【')
+                .trim_end_matches('】')
+                .trim(),
+            true,
+        )
+    } else {
+        (without_colon, false)
+    };
+
+    if candidate.is_empty() || candidate.chars().count() > 32 {
+        return None;
+    }
+    alias_type(candidate, decorated).map(|chunk_type| (candidate.to_string(), chunk_type))
+}
+
+fn contains_any(text: &str, patterns: &[&str]) -> bool {
+    patterns.iter().any(|pattern| text.contains(pattern))
+}
+
+fn has_year_marker(text: &str) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    chars.windows(4).any(|window| {
+        matches!(window[0], '1' | '2')
+            && matches!(window[1], '9' | '0')
+            && window[2].is_ascii_digit()
+            && window[3].is_ascii_digit()
+    })
+}
+
+/// 完全没有章节标题时，用多个结构信号做保守分类。
+fn infer_content_chunk_type(text: &str) -> String {
+    let project_signals = [
+        text.contains("项目"),
+        contains_any(
+            text,
+            &["技术栈", "项目职责", "项目描述", "项目成果", "项目亮点"],
+        ),
+        contains_any(text, &["负责", "实现", "搭建", "开发"]),
+    ]
+    .into_iter()
+    .filter(|matched| *matched)
+    .count();
+    if text.contains("项目") && project_signals >= 2 {
+        return "project".to_string();
+    }
+
+    let education_signals = [
+        contains_any(text, &["大学", "学院", "学校"]),
+        contains_any(text, &["本科", "硕士", "博士", "大专", "学历"]),
+        contains_any(text, &["专业", "毕业"]),
+        has_year_marker(text),
+    ]
+    .into_iter()
+    .filter(|matched| *matched)
+    .count();
+    if education_signals >= 2 {
+        return "education".to_string();
+    }
+
+    let experience_signals = [
+        contains_any(text, &["公司", "集团", "科技", "事务所"]),
+        contains_any(text, &["工程师", "经理", "设计师", "开发", "任职"]),
+        contains_any(text, &["工作职责", "岗位职责", "任职时间"]),
+        has_year_marker(text) || text.contains("至今"),
+    ]
+    .into_iter()
+    .filter(|matched| *matched)
+    .count();
+    if experience_signals >= 2 {
+        return "experience".to_string();
+    }
+
+    let lower = text.to_lowercase();
+    let technologies = [
+        "vue",
+        "react",
+        "angular",
+        "typescript",
+        "javascript",
+        "node.js",
+        "java",
+        "python",
+        "go",
+        "rust",
+        "git",
+        "docker",
+        "sql",
+        "css",
+        "html",
+        "vite",
+        "webpack",
+    ]
+    .iter()
+    .filter(|technology| lower.contains(**technology))
+    .count();
+    if technologies >= 3 && contains_any(text, &["熟练", "精通", "掌握", "技能", "技术栈", "框架"])
+    {
+        return "skills".to_string();
+    }
+    if contains_any(text, &["个人优势", "自我评价", "个人总结"])
+        && contains_any(text, &["擅长", "具备", "经验", "能力"])
+    {
+        return "summary".to_string();
+    }
+    "other".to_string()
 }
 
 /// 长段落二次拆分（与 TS 端逻辑一致，1200 字符阈值）
@@ -105,45 +283,69 @@ fn split_long_section(section: &str) -> Vec<String> {
 /// 简历分块函数
 ///
 /// 切分策略（与 TS 端完全一致）：
-///   1. 按 ## 标题行切分
+///   1. 识别 Markdown 1-6 级、粗体、书名号和纯文本章节标题
 ///   2. 每个块推断类型
-///   3. 超过 1200 字符的块按段落二次拆分
+///   3. 无明确标题时按自然段做高置信度兜底分类
+///   4. 超过 1200 字符的块按段落二次拆分
 ///   4. UUID v4 作为 chunk ID（与 TS 端的 "blockIndex-partIndex" 风格不同，但功能等价）
 fn chunk_resume(resume_id: &str, version: i64, content: &str) -> Vec<RagChunk> {
     let normalized = content.replace("\r\n", "\n");
     let hash = content_hash(&normalized);
     let mut sections = Vec::new();
     let mut current = String::new();
+    let mut current_title = "基本信息".to_string();
+    let mut current_type = "other".to_string();
+    let mut recognized_heading_count = 0;
 
     for line in normalized.lines() {
-        if line.starts_with("## ") && !current.trim().is_empty() {
-            sections.push(current.trim().to_string());
+        if let Some((title, chunk_type)) = parse_section_heading(line) {
+            if !current.trim().is_empty() {
+                sections.push((
+                    current_title.clone(),
+                    current_type.clone(),
+                    current.trim().to_string(),
+                ));
+            }
             current.clear();
+            current_title = title;
+            current_type = chunk_type;
+            recognized_heading_count += 1;
         }
         current.push_str(line);
         current.push('\n');
     }
     if !current.trim().is_empty() {
-        sections.push(current.trim().to_string());
+        sections.push((current_title, current_type, current.trim().to_string()));
     }
-    if sections.is_empty() {
-        sections.push(normalized);
+
+    if recognized_heading_count == 0 {
+        sections = normalized
+            .split("\n\n")
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+            .enumerate()
+            .map(|(index, part)| {
+                let chunk_type = infer_content_chunk_type(part);
+                let title = if chunk_type == "other" {
+                    if index == 0 {
+                        "基本信息".to_string()
+                    } else {
+                        "其他".to_string()
+                    }
+                } else {
+                    DIMENSIONS
+                        .iter()
+                        .find(|(kind, _, _)| *kind == chunk_type)
+                        .map(|(_, label, _)| (*label).to_string())
+                        .unwrap_or_else(|| "其他".to_string())
+                };
+                (title, chunk_type, part.to_string())
+            })
+            .collect();
     }
 
     let mut chunks = Vec::new();
-    for (section_index, section) in sections.iter().enumerate() {
-        let title = section
-            .lines()
-            .find(|line| line.starts_with("## "))
-            .map(|line| line.trim_start_matches('#').trim().to_string())
-            .unwrap_or_else(|| {
-                if section_index == 0 {
-                    "基本信息".to_string()
-                } else {
-                    "其他".to_string()
-                }
-            });
-        let chunk_type = infer_chunk_type(&title);
+    for (title, chunk_type, section) in &sections {
         for part in split_long_section(section) {
             let chunk_index = chunks.len() as i64;
             chunks.push(RagChunk {
@@ -366,9 +568,8 @@ fn keyword_match(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    let top_chunks: Vec<RagChunkMatch> = scored
+    let matches: Vec<RagChunkMatch> = scored
         .into_iter()
-        .take(5)
         .map(|(index, score)| {
             let chunk = &chunks[index];
             RagChunkMatch {
@@ -380,7 +581,8 @@ fn keyword_match(
             }
         })
         .collect();
-    let dimension_scores = dimension_scores(&top_chunks);
+    let dimension_scores = dimension_scores(&matches);
+    let top_chunks = matches.iter().take(5).cloned().collect();
     RagMatchResult {
         overall_score: overall_score(&dimension_scores),
         retrieval_mode: "keyword".to_string(),
@@ -606,13 +808,13 @@ pub async fn match_resume_job(
                         })
                         .collect();
                     matches.sort_by(|left, right| right.score.cmp(&left.score));
-                    matches.truncate(5);
                     let dimension_scores = dimension_scores(&matches);
+                    let top_chunks = matches.iter().take(5).cloned().collect();
                     return Ok(RagMatchResult {
                         overall_score: overall_score(&dimension_scores),
                         retrieval_mode: "embedding".to_string(), // 成功标记
                         dimension_scores,
-                        top_chunks: matches,
+                        top_chunks,
                         warning: None, // 语义搜索成功，无警告
                     });
                 }
@@ -644,6 +846,73 @@ mod tests {
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0].chunk_type, "skills");
         assert_eq!(chunks[1].chunk_type, "project");
+    }
+
+    #[test]
+    fn chunk_resume_supports_multiple_heading_formats() {
+        let chunks = chunk_resume(
+            "r1",
+            1,
+            "# 张三\n\n### 教育背景\n某大学 本科\n\n**工作经历**\n某公司 前端工程师\n\n项目经验：\n项目职责",
+        );
+        assert_eq!(chunks[0].section_title, "基本信息");
+        assert_eq!(chunks[0].chunk_type, "other");
+        assert!(chunks.iter().any(|chunk| chunk.chunk_type == "education"));
+        assert!(chunks.iter().any(|chunk| chunk.chunk_type == "experience"));
+        assert!(chunks.iter().any(|chunk| chunk.chunk_type == "project"));
+    }
+
+    #[test]
+    fn project_heading_takes_priority_over_generic_experience_word() {
+        let chunks = chunk_resume("r1", 1, "### 项目经历\nAI 求职助手");
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].chunk_type, "project");
+    }
+
+    #[test]
+    fn titleless_resume_uses_high_confidence_fallback() {
+        let chunks = chunk_resume(
+            "r1",
+            1,
+            "张三 13800000000\n\n某大学 计算机专业 本科 2020年毕业\n\n熟练 Vue React TypeScript 技术栈",
+        );
+        assert!(chunks.iter().any(|chunk| chunk.chunk_type == "education"));
+        assert!(chunks.iter().any(|chunk| chunk.chunk_type == "skills"));
+    }
+
+    #[test]
+    fn rag_index_version_invalidates_legacy_content_hash() {
+        let mut legacy_hasher = Sha256::new();
+        legacy_hasher.update(b"same resume");
+        let legacy_hash = format!("{:x}", legacy_hasher.finalize());
+        assert_ne!(content_hash("same resume"), legacy_hash);
+        assert_eq!(content_hash("line1\r\nline2"), content_hash("line1\nline2"));
+    }
+
+    #[test]
+    fn dimension_scores_include_candidates_outside_global_top_five() {
+        let mut matches = (0..5)
+            .map(|index| RagChunkMatch {
+                chunk_id: format!("other-{index}"),
+                chunk_type: "other".to_string(),
+                section_title: "其他".to_string(),
+                text: "高相关片段".to_string(),
+                score: 90 - index,
+            })
+            .collect::<Vec<_>>();
+        matches.push(RagChunkMatch {
+            chunk_id: "education".to_string(),
+            chunk_type: "education".to_string(),
+            section_title: "教育背景".to_string(),
+            text: "本科".to_string(),
+            score: 42,
+        });
+        let scores = dimension_scores(&matches);
+        let education = scores
+            .iter()
+            .find(|item| item.dimension == "教育背景")
+            .expect("education dimension");
+        assert_eq!(education.score, 42);
     }
 
     #[test]

@@ -26,6 +26,12 @@ interface RagChunk {
   tokens: string[]
 }
 
+interface RagSection {
+  type: string
+  sectionTitle: string
+  text: string
+}
+
 /**
  * 维度权重配置
  *
@@ -49,6 +55,15 @@ const DIMENSION_LABELS: Record<string, string> = {
   education: '教育背景',
   intent: '求职意向',
   other: '其他',
+}
+
+const SECTION_ALIASES: Record<string, string[]> = {
+  experience: ['工作经历', '工作经验', '任职经历', '职业经历', '实习经历'],
+  project: ['项目经历', '项目经验', '项目实践', '代表项目', '作品经历'],
+  skills: ['专业技能', '技能清单', '技术能力', '技术栈', '核心技能'],
+  summary: ['个人优势', '自我评价', '个人总结', '个人简介'],
+  education: ['教育背景', '教育经历', '学历背景', '学校经历'],
+  intent: ['求职意向', '期望职位', '职业目标'],
 }
 
 function normalizeText(text: string): string {
@@ -96,19 +111,126 @@ function tokenize(text: string): string[] {
 }
 
 /**
- * 根据标题文本推断分块类型
+ * 识别 Markdown、粗体、书名号和纯文本章节标题。
  *
- * 用关键词匹配而非 AI 分类，保证确定性 —— 同样的标题永远得到同样的类型。
- * 类型决定了后续维度打分时的权重归属。
+ * 纯文本标题必须与别名精确匹配；带有明确标题装饰时允许包含别名，
+ * 从而兼容“### 工作经历 Experience”等写法，同时避免把正文中的
+ * “我有丰富的项目经历”误判为章节边界。
  */
-function inferChunkType(title: string): string {
-  if (/项目|作品/.test(title)) return 'project'
-  if (/工作|经历|任职/.test(title)) return 'experience'
-  if (/技能|技术|专业/.test(title)) return 'skills'
-  if (/优势|总结|简介|自我/.test(title)) return 'summary'
-  if (/教育|学历|学校/.test(title)) return 'education'
-  if (/求职|意向/.test(title)) return 'intent'
+function parseSectionHeading(line: string): { title: string; type: string } | null {
+  const trimmed = line.trim()
+  if (!trimmed || /^[-+*]\s+/.test(trimmed) || /^\d+[.)、]\s*/.test(trimmed)) return null
+
+  const markdownMatch = trimmed.match(/^#{1,6}\s+(.+?)\s*#*$/)
+  const boldMatch = trimmed.match(/^\*\*(.+?)\*\*\s*[:：]?$/)
+    || trimmed.match(/^__(.+?)__\s*[:：]?$/)
+  const bracketMatch = trimmed.match(/^【(.+?)】\s*[:：]?$/)
+  const decorated = Boolean(markdownMatch || boldMatch || bracketMatch)
+  const title = (markdownMatch?.[1] || boldMatch?.[1] || bracketMatch?.[1] || trimmed)
+    .replace(/\s*[:：]\s*$/, '')
+    .trim()
+
+  if (!title || title.length > 32) return null
+  const compactTitle = title.replace(/\s+/g, '')
+  for (const [type, aliases] of Object.entries(SECTION_ALIASES)) {
+    const matched = aliases.some((alias) => (
+      decorated ? compactTitle.includes(alias) : compactTitle === alias
+    ))
+    if (matched) return { title, type }
+  }
+  return null
+}
+
+function countSignals(text: string, patterns: RegExp[]): number {
+  return patterns.reduce((count, pattern) => count + Number(pattern.test(text)), 0)
+}
+
+/**
+ * 无章节标题时的高置信度兜底分类。
+ *
+ * 只有同时命中多个结构信号才归类，否则保留 other，避免为了产生分数
+ * 而把普通正文强行归入某个维度。
+ */
+function inferContentChunkType(text: string): string {
+  const projectSignals = countSignals(text, [
+    /项目/,
+    /技术栈|项目职责|项目描述|项目成果|项目亮点/,
+    /负责|实现|搭建|开发/,
+  ])
+  if (projectSignals >= 2 && /项目/.test(text)) return 'project'
+
+  const educationSignals = countSignals(text, [
+    /大学|学院|学校/,
+    /本科|硕士|博士|大专|学历/,
+    /专业|毕业/,
+    /(?:19|20)\d{2}[./年-]/,
+  ])
+  if (educationSignals >= 2) return 'education'
+
+  const experienceSignals = countSignals(text, [
+    /公司|集团|科技|事务所/,
+    /工程师|经理|设计师|开发|任职/,
+    /工作职责|岗位职责|任职时间/,
+    /(?:19|20)\d{2}[./年-].{0,12}(?:19|20)\d{2}|至今/,
+  ])
+  if (experienceSignals >= 2) return 'experience'
+
+  const technologyMatches = text.match(
+    /\b(?:Vue|React|Angular|TypeScript|JavaScript|Node(?:\.js)?|Java|Python|Go|Rust|Git|Docker|SQL|CSS|HTML|Vite|Webpack)\b/gi,
+  ) || []
+  if (new Set(technologyMatches.map((item) => item.toLowerCase())).size >= 3
+    && /熟练|精通|掌握|技能|技术栈|框架/.test(text)) {
+    return 'skills'
+  }
+
+  if (/个人优势|自我评价|个人总结/.test(text) && /擅长|具备|经验|能力/.test(text)) {
+    return 'summary'
+  }
   return 'other'
+}
+
+function splitResumeSections(content: string): RagSection[] {
+  const normalized = content.replace(/\r\n/g, '\n')
+  const sections: RagSection[] = []
+  let currentLines: string[] = []
+  let currentTitle = '基本信息'
+  let currentType = 'other'
+  let recognizedHeadingCount = 0
+
+  const pushCurrent = () => {
+    const text = currentLines.join('\n').trim()
+    if (text) sections.push({ type: currentType, sectionTitle: currentTitle, text })
+  }
+
+  for (const line of normalized.split('\n')) {
+    const heading = parseSectionHeading(line)
+    if (heading) {
+      pushCurrent()
+      currentLines = [line]
+      currentTitle = heading.title
+      currentType = heading.type
+      recognizedHeadingCount += 1
+    } else {
+      currentLines.push(line)
+    }
+  }
+  pushCurrent()
+
+  if (recognizedHeadingCount > 0) return sections
+
+  // 没有任何明确章节标题时，按自然段做保守分类。
+  return normalized
+    .split(/\n{2,}/)
+    .map((text) => text.trim())
+    .filter(Boolean)
+    .map((text, index) => {
+      const type = inferContentChunkType(text)
+      return {
+        type,
+        sectionTitle: type === 'other' ? (index === 0 ? '基本信息' : '其他') : DIMENSION_LABELS[type],
+        text,
+      }
+    })
 }
 
 /**
@@ -144,30 +266,20 @@ function splitLongSection(section: string): string[] {
 /**
  * 简历分块函数 —— RAG pipeline 的第一步
  *
- * 切分策略：以 ## 标题为边界切分，因为 Markdown 简历的 ## 标题
- * 天然代表了语义边界（工作经历 / 项目经验 / 专业技能 等）。
+ * 切分策略：识别 1-6 级 Markdown 标题、粗体标题、书名号标题和独立成行的
+ * 纯文本章节名；没有章节标题时再按自然段做高置信度兜底分类。
  *
- * 第一个块如果没有 ## 标题，默认为「基本信息」。
+ * 第一个无分类块默认为「基本信息」。
  * 每个块经过类型推断 + 长段拆分 + 分词后返回。
  */
 export function chunkResumeForRag(content: string): RagChunk[] {
-  const normalized = content.replace(/\r\n/g, '\n')
-  const blocks = normalized.split(/(?=^##\s+)/m) // 前瞻断言：在 ## 之前切开，保留分隔符
   const chunks: RagChunk[] = []
-
-  blocks.forEach((block, blockIndex) => {
-    const trimmed = block.trim()
-    if (!trimmed) return
-
-    const titleMatch = trimmed.match(/^##\s+(.+)$/m)
-    const sectionTitle = titleMatch?.[1]?.replace(/[-#]/g, '').trim() || (blockIndex === 0 ? '基本信息' : '其他')
-    const type = inferChunkType(sectionTitle)
-
-    splitLongSection(trimmed).forEach((text, partIndex) => {
+  splitResumeSections(content).forEach((section, sectionIndex) => {
+    splitLongSection(section.text).forEach((text, partIndex) => {
       chunks.push({
-        id: `${blockIndex}-${partIndex}`,
-        type,
-        sectionTitle,
+        id: `${sectionIndex}-${partIndex}`,
+        type: section.type,
+        sectionTitle: section.sectionTitle,
         text,
         tokens: tokenize(text), // 预分词，避免检索时重复计算
       })
@@ -279,8 +391,8 @@ function weightedOverallScore(scores: RagDimensionScore[]): number {
  *   2. 将公司名/职位/JD/公司信息拼接为查询字符串
  *   3. 对查询分词
  *   4. 计算每个 chunk 的 BM25 分数
- *   5. 取 top-8 → 归一化 → top-5 返回
- *   6. 计算维度分数和加权总分
+ *   5. 全量候选用于各维度评分
+ *   6. 仅截取全局 top-5 作为可视化证据
  *
  * 始终返回 retrievalMode: 'keyword' + 提示信息，
  * 因为浏览器端不支持语义向量搜索。
@@ -302,7 +414,6 @@ export function matchResumeWithKeywordRag(request: AnalyzeRequest): RagMatchResu
     }))
     .filter((item) => item.rawScore > 0)
     .sort((a, b) => b.rawScore - a.rawScore)
-    .slice(0, 8)
     .map<RagChunkMatch>(({ chunk, rawScore }) => ({
       chunkId: chunk.id,
       chunkType: chunk.type,
@@ -337,7 +448,7 @@ export function formatRagContext(rag?: RagMatchResult): string {
   if (!rag) return '未提供 RAG 匹配证据。'
 
   const dimensions = rag.dimensionScores
-    .map((item) => `- ${item.dimension}: ${item.score}%`)
+    .map((item) => `- ${item.dimension}: ${item.score > 0 ? `${item.score}%` : '暂无相关内容'}`)
     .join('\n')
   const chunks = rag.topChunks
     .map((chunk, index) => `${index + 1}. [${chunk.sectionTitle}] 匹配度 ${chunk.score}%\n${chunk.text}`)

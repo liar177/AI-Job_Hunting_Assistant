@@ -671,7 +671,9 @@ async function exportTxt() {
                     >
                       <div class="mb-1 flex items-center justify-between gap-2 text-xs">
                         <span class="font-medium text-gray-600">{{ score.dimension }}</span>
-                        <span class="text-gray-500">{{ score.score }}%</span>
+                        <span class="text-gray-500">
+                          {{ score.score > 0 ? `${score.score}%` : '暂无相关内容' }}
+                        </span>
                       </div>
                       <div class="h-1.5 overflow-hidden rounded-full bg-gray-200">
                         <div class="h-full rounded-full bg-accent" :style="{ width: `${score.score}%` }"></div>
