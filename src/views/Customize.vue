@@ -951,7 +951,7 @@ async function exportTxt() {
                 </div>
               </div>
 
-              <div v-else-if="generatedContent" class="min-h-full">
+              <div v-else-if="generatedContent" class="h-full min-h-[520px]">
                 <div
                   v-if="activeTab === 'preview'"
                   class="prose-resume min-h-full max-w-none px-6 py-6 sm:px-8 lg:px-10"
@@ -960,7 +960,7 @@ async function exportTxt() {
                 <textarea
                   v-else
                   :value="generatedContent"
-                  class="h-full min-h-[520px] w-full resize-none border-0 p-5 font-mono text-sm leading-6 text-gray-800 focus:outline-none focus:ring-0"
+                  class="fill-native-textarea p-5 font-mono text-sm leading-6 text-gray-800"
                   spellcheck="false"
                   @input="updateGeneratedContent(($event.target as HTMLTextAreaElement).value)"
                 ></textarea>
@@ -1000,7 +1000,7 @@ async function exportTxt() {
                 </div>
               </div>
 
-              <div v-else-if="generatedSelfIntroduction" class="min-h-full">
+              <div v-else-if="generatedSelfIntroduction" class="h-full min-h-[520px]">
                 <div
                   v-if="introductionActiveTab === 'preview'"
                   class="mx-auto min-h-full max-w-3xl whitespace-pre-wrap px-6 py-8 text-[15px] leading-8 text-gray-800 sm:px-10 lg:py-10"
@@ -1008,7 +1008,7 @@ async function exportTxt() {
                 <textarea
                   v-else
                   :value="generatedSelfIntroduction"
-                  class="h-full min-h-[520px] w-full resize-none border-0 p-6 text-[15px] leading-8 text-gray-800 focus:outline-none focus:ring-0 sm:p-8"
+                  class="fill-native-textarea p-6 text-[15px] leading-8 text-gray-800 sm:p-8"
                   spellcheck="false"
                   @input="updateSelfIntroduction(($event.target as HTMLTextAreaElement).value)"
                 ></textarea>

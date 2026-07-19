@@ -143,7 +143,7 @@ async function exportPdf() {
     <!-- 左右分栏 -->
     <main class="flex-1 overflow-hidden flex gap-4 p-4">
       <!-- 左侧编辑器 -->
-      <section class="flex-1 flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden">
+      <section class="min-h-0 flex-1 flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden">
         <div class="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
           <div class="flex items-center gap-2 text-sm font-medium text-gray-600">
             <FileText class="w-4 h-4" />
@@ -154,13 +154,13 @@ async function exportPdf() {
         <el-input
           v-model="content"
           type="textarea"
-          class="flex-1 font-mono"
+          class="fill-textarea font-mono"
           placeholder="在此输入 Markdown 内容..."
         />
       </section>
 
       <!-- 右侧预览 -->
-      <section class="flex-1 flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden">
+      <section class="min-h-0 flex-1 flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden">
         <div class="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
           <div class="flex items-center gap-2 text-sm font-medium text-gray-600">
             <Eye class="w-4 h-4" />
