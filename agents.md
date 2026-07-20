@@ -84,3 +84,11 @@ npm run lint     # ESLint 检查
 - AI 功能依赖用户配置的 API Key，未配置时相关功能不可用但不会报错。
 - 路由使用 `createWebHistory()`，生产部署需配置 SPA fallback。
 - 导入的简历文件源类型（PDF/DOCX 等）会记录在 `sourceType` 字段中，但该字段未在 Resume 接口中正式声明（通过类型断言访问）。
+
+## 项目修改工作流
+
+修改源码、配置、构建脚本、测试、数据结构、UI 或运行行为时：
+
+1. 同时使用全局 `project-change-testing` Skill 和项目级 `ai-job-assistant-change-workflow` Skill。
+2. 全局 Skill 规定通用测试底线；项目级 Skill 补充本项目的影响分析、兼容性检查和固定汇报格式。
+3. 不得用项目级规则削弱全局测试要求；规则不冲突时执行更严格的一项。

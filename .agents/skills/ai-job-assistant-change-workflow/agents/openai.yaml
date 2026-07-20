@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI 求职助手变更工作流"
+  short_description: "执行项目专属影响分析、兼容性检查与统一验证结果汇报"
+  default_prompt: "Use $ai-job-assistant-change-workflow to modify this project with repository-specific checks and a structured verification report."
